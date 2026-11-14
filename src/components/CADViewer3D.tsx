@@ -200,7 +200,7 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
       }
 
       // 3D STN Installation Zones on Wall (Rendered with exact sub-segment length and position)
-      const wallZones = floor.installationZones?.filter((z) => z.wallId === wall.id) || [];
+      const wallZones = floor.installationZones?.filter((z) => z.wallId === wall.id && !(z.isAutomatic && z.type === 'zvr')) || [];
       if (wallZones.length > 0) {
         wallZones.forEach((z) => {
           const sDist = Math.max(0, Math.min(wallLen - 0.1, z.distanceFromStartMeters ?? 0));

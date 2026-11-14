@@ -2254,7 +2254,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
           <g id="stn-installation-zones-layer">
             {/* A. Wall-based Installation Zones (Rendered per zone with individual sub-segment dimensions) */}
             {floor.installationZones
-              ?.filter((z) => z.wallId)
+              ?.filter((z) => z.wallId && !(z.isAutomatic && z.type === 'zvr'))
               .map((zone) => {
                 const wall = floor.walls.find((w) => w.id === zone.wallId);
                 if (!wall) return null;
@@ -2338,6 +2338,12 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
 
                 const sideBadgeLabel = effectiveSide === 'left' ? ' [Ľavá]' : effectiveSide === 'right' ? ' [Pravá]' : '';
 
+                // Dynamické prispôsobenie štítku mierke (LOD):
+                // Pri oddialení (zoom out) sa štítky nezobrazujú a nevysúvajú zo stien!
+                const screenZoneLen = zLen * scale;
+                const shouldShowBadge = isSelected || (screenZoneLen >= 90 && scale >= 30);
+                const badgeWidth = isSelected ? 116 : Math.min(104, Math.max(50, screenZoneLen - 12));
+
                 return (
                   <g
                     key={`inst-zone-${zone.id}`}
@@ -2374,34 +2380,36 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                       />
                     )}
 
-                    {/* Label Badge on Zone */}
-                    <g
-                      transform={`translate(${handleMidPt.x}, ${handleMidPt.y}) rotate(${
-                        angleDeg > 90 || angleDeg < -90 ? angleDeg + 180 : angleDeg
-                      })`}
-                    >
-                      <rect
-                        x="-52"
-                        y="-7"
-                        width="104"
-                        height="14"
-                        rx="3.5"
-                        fill={isSelected ? '#0284c7' : isKitchen ? 'rgba(245, 158, 11, 0.95)' : 'rgba(15, 23, 42, 0.88)'}
-                        stroke={zoneColor}
-                        strokeWidth="0.8"
-                      />
-                      <text
-                        x="0"
-                        y="3"
-                        fill={isSelected ? '#ffffff' : isKitchen ? '#020617' : zoneColor}
-                        fontSize="8"
-                        fontWeight="bold"
-                        textAnchor="middle"
-                        fontFamily="monospace"
+                    {/* Label Badge on Zone: Zobrazí sa iba ak je zóna označená alebo ak je na obrazovke dostatočne dlhá a mierka nie je príliš oddialená */}
+                    {shouldShowBadge && (
+                      <g
+                        transform={`translate(${handleMidPt.x}, ${handleMidPt.y}) rotate(${
+                          angleDeg > 90 || angleDeg < -90 ? angleDeg + 180 : angleDeg
+                        })`}
                       >
-                        {isKitchen ? `🍳 Linka ${zLen.toFixed(1)}m${sideBadgeLabel}` : `${zone.type.toUpperCase()} ${zLen.toFixed(1)}m${sideBadgeLabel}`}
-                      </text>
-                    </g>
+                        <rect
+                          x={-badgeWidth / 2}
+                          y="-7"
+                          width={badgeWidth}
+                          height="14"
+                          rx="3.5"
+                          fill={isSelected ? '#0284c7' : isKitchen ? 'rgba(245, 158, 11, 0.95)' : 'rgba(15, 23, 42, 0.88)'}
+                          stroke={zoneColor}
+                          strokeWidth="0.8"
+                        />
+                        <text
+                          x="0"
+                          y="3"
+                          fill={isSelected ? '#ffffff' : isKitchen ? '#020617' : zoneColor}
+                          fontSize="8"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          fontFamily="monospace"
+                        >
+                          {isKitchen ? `🍳 Linka ${zLen.toFixed(1)}m${sideBadgeLabel}` : `${zone.type.toUpperCase()} ${zLen.toFixed(1)}m${sideBadgeLabel}`}
+                        </text>
+                      </g>
+                    )}
 
                     {/* Interactive Drag & Resize Handles when Selected */}
                     {isSelected && (

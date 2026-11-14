@@ -55,43 +55,6 @@ export function generateSTNInstallationZones(floor: Floor): InstallationZone[] {
       isAutomatic: true,
     });
 
-    // Zvislé zóny v rohoch steny (ZVR - 10 až 30 cm od rohu)
-    if (wallLength >= 0.8) {
-      // Začiatok steny (roh)
-      zones.push({
-        id: `zone-zvr-start-${wall.id}`,
-        name: `ZVR - Roh steny (štart #${idx + 1})`,
-        type: 'zvr',
-        wallId: wall.id,
-        distanceFromStartMeters: 0.10,
-        lengthMeters: 0.20,
-        widthMeters: 0.20,
-        elevationBottomMeters: 0.15,
-        elevationTopMeters: Number(Math.max(0.2, floorHeight - 0.15).toFixed(2)),
-        description: 'STN 33 2130: Zvislá inštalačná zóna 10-30 cm od vnútorného rohu steny pre zvislé zvody a stúpacie vedenia.',
-        stnReference: 'STN 33 2130 čl. 7.6.3',
-        color: '#a78bfa', // purple-400
-        isAutomatic: true,
-      });
-
-      // Koniec steny (roh)
-      zones.push({
-        id: `zone-zvr-end-${wall.id}`,
-        name: `ZVR - Roh steny (koniec #${idx + 1})`,
-        type: 'zvr',
-        wallId: wall.id,
-        distanceFromStartMeters: Number((wallLength - 0.30).toFixed(2)),
-        lengthMeters: 0.20,
-        widthMeters: 0.20,
-        elevationBottomMeters: 0.15,
-        elevationTopMeters: Number(Math.max(0.2, floorHeight - 0.15).toFixed(2)),
-        description: 'STN 33 2130: Zvislá inštalačná zóna 10-30 cm od rohu steny pre zvislé zvody.',
-        stnReference: 'STN 33 2130 čl. 7.6.3',
-        color: '#a78bfa',
-        isAutomatic: true,
-      });
-    }
-
     // Zvislé zóny pri dverách (ZVZ - 10 až 30 cm od dvernej zárubne pre vypínače a termostaty)
     if (wall.openings && wall.openings.length > 0) {
       wall.openings.forEach((op) => {
