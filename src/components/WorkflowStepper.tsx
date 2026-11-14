@@ -39,7 +39,7 @@ const STEP_ICONS: Record<WorkflowStep, React.ElementType> = {
 /**
  * Zisťuje, či sa v danom kroku workflow už nachádzajú vytvorené prvky na podlaží.
  */
-export const checkStepHasElements = (step: WorkflowStep, floor: Floor): boolean => {
+const checkStepHasElements = (step: WorkflowStep, floor: Floor): boolean => {
   if (!floor) return false;
   switch (step) {
     case 1:
