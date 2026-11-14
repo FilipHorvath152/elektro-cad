@@ -36,7 +36,7 @@ import {
   resolveAllFloorWallIntersections,
   resolveWallIntersections,
 } from '../services/wallIntersectionService';
-import { Eye, EyeOff, Box, Compass, Navigation, Magnet, GitFork, Ruler, CheckCircle2, GripHorizontal, Minimize2, ShieldCheck, Sparkles, Columns, BookOpen, Layers, Filter, ChevronDown } from 'lucide-react';
+import { Eye, EyeOff, Box, Compass, Navigation, Magnet, GitFork, Ruler, CheckCircle2, GripHorizontal, Minimize2, ShieldCheck, Sparkles, Columns, BookOpen, Layers, Filter, ChevronDown, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 interface CADCanvas2DProps {
   floor: Floor;
@@ -189,6 +189,49 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
   const effectiveVisibility = componentVisibility || internalVisibility;
   const handleUpdateVisibility = onChangeComponentVisibility || setInternalVisibility;
   const [isVisibilityMenuOpen, setIsVisibilityMenuOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+
+  const handleZoomStep = useCallback((delta: number) => {
+    setScale((prev) => Math.max(15, Math.min(250, Math.round(prev * (1 + delta)))));
+  }, []);
+
+  const handleFitView = useCallback(() => {
+    if (floor.walls.length === 0) {
+      setScale(65);
+      setPan({ x: 180, y: 120 });
+      return;
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    floor.walls.forEach((w) => {
+      minX = Math.min(minX, w.start.x, w.end.x);
+      maxX = Math.max(maxX, w.start.x, w.end.x);
+      minY = Math.min(minY, w.start.y, w.end.y);
+      maxY = Math.max(maxY, w.start.y, w.end.y);
+    });
+    const widthM = maxX - minX;
+    const heightM = maxY - minY;
+    if (widthM <= 0.2 || heightM <= 0.2) return;
+
+    const vpW = typeof window !== 'undefined' ? window.innerWidth - 320 : 1000;
+    const vpH = typeof window !== 'undefined' ? window.innerHeight - 180 : 700;
+    const padding = 70;
+
+    const scaleX = (vpW - padding * 2) / widthM;
+    const scaleY = (vpH - padding * 2) / heightM;
+    const newScale = Math.max(20, Math.min(130, Math.min(scaleX, scaleY)));
+
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    setScale(newScale);
+    setPan({
+      x: vpW / 2 - centerX * newScale,
+      y: vpH / 2 - centerY * newScale,
+    });
+  }, [floor.walls]);
 
   // Helper: Is a specific electrical component visible according to active layer filters
   const isComponentVisible = useCallback(
@@ -1791,68 +1834,58 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
       onWheel={handleWheel}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* 1-CLICK 2D / 3D TOGGLE BUTTON */}
+      {/* Compact 3D View Toggle Pill */}
       {onSwitchTo3D && (
         <div
-          className="absolute top-4 right-4 z-20 flex items-center gap-2 no-canvas-click"
+          className="absolute top-3 right-3 z-20 flex items-center gap-2 no-canvas-click"
           onMouseDown={(e) => e.stopPropagation()}
         >
           <button
             onClick={onSwitchTo3D}
-            className="px-3.5 py-2 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xl shadow-sky-500/25 border border-sky-400/40 transition active:scale-95"
-            title="Okamžitý prepínač do 3D pohľadu"
+            className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-slate-700/80 shadow-md transition active:scale-95 cursor-pointer"
+            title="Prepnúť do 3D realistického modelu"
           >
-            <Box className="w-4 h-4" />
-            <span>Prepnúť do 3D pohľadu</span>
+            <Box className="w-3.5 h-3.5 text-sky-400" />
+            <span className="hidden sm:inline">3D Pohľad</span>
           </button>
         </div>
       )}
 
-      {/* Floating Canvas Controls & SolidWorks Mouse Hint */}
+      {/* Floating CAD Viewport Tools Dock */}
       <div
-        className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-slate-800/90 backdrop-blur-md px-3 py-2 rounded-lg border border-slate-700 text-xs text-slate-300 shadow-xl no-canvas-click"
+        className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs text-slate-300 shadow-xl no-canvas-click select-none"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <span className="font-semibold text-sky-400 flex items-center gap-1.5">
-          <Compass className="w-3.5 h-3.5" /> 2D Pôdorys
-        </span>
-        <span className="text-slate-500">|</span>
-        <span>X: {cursorPos.x.toFixed(2)} m, Y: {cursorPos.y.toFixed(2)} m</span>
-        <span className="text-slate-500">|</span>
-        <span className="text-[10px] text-slate-400 flex items-center gap-1">
-          <Magnet className="w-3 h-3 text-emerald-400" /> Auto-snap 90° aktívny
-        </span>
-
         <button
           onClick={() => setShowZones(!showZones)}
-          className={`ml-2 px-2 py-1 rounded flex items-center gap-1 transition ${
-            showZones ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40' : 'bg-slate-700 text-slate-400'
+          className={`px-2 py-1 rounded-lg flex items-center gap-1.5 transition text-xs font-semibold cursor-pointer ${
+            showZones ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40' : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
           }`}
           title="Zobraziť normové inštalačné zóny v stenách podľa STN 33 2130"
         >
-          {showZones ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-          STN Zóny
+          {showZones ? <Eye className="w-3.5 h-3.5 text-sky-400" /> : <EyeOff className="w-3.5 h-3.5" />}
+          <span>STN Zóny</span>
         </button>
 
         <button
           onClick={() => setShowCableRoutes(!showCableRoutes)}
-          className={`px-2 py-1 rounded flex items-center gap-1 transition ${
-            showCableRoutes ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-700 text-slate-400'
+          className={`px-2 py-1 rounded-lg flex items-center gap-1.5 transition text-xs font-semibold cursor-pointer ${
+            showCableRoutes ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
           }`}
           title="Zobraziť trasy káblov k rozvádzaču"
         >
-          {showCableRoutes ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-          Trasy káblov
+          {showCableRoutes ? <Eye className="w-3.5 h-3.5 text-amber-400" /> : <EyeOff className="w-3.5 h-3.5" />}
+          <span>Trasy káblov</span>
         </button>
 
         {/* Component Layer Visibility Filter Dropdown */}
         <div className="relative">
           <button
             onClick={() => setIsVisibilityMenuOpen((prev) => !prev)}
-            className={`px-2 py-1 rounded flex items-center gap-1.5 transition text-xs shadow-sm font-medium ${
+            className={`px-2 py-1 rounded-lg flex items-center gap-1.5 transition text-xs font-semibold cursor-pointer ${
               allVisible
-                ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-                : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 font-bold'
+                ? 'bg-slate-800/80 hover:bg-slate-800 text-slate-300'
+                : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50'
             }`}
             title="Filtrovať viditeľnosť elektroinštalácie (skryť/zobraziť zásuvky, svetlá, vypínače...)"
           >
@@ -1878,7 +1911,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                   onClick={() => {
                     handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY);
                   }}
-                  className="text-[10px] text-sky-400 hover:text-sky-300 font-semibold transition"
+                  className="text-[10px] text-sky-400 hover:text-sky-300 font-semibold transition cursor-pointer"
                 >
                   Zobraziť všetko
                 </button>
@@ -1891,7 +1924,6 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      // Exact user scenario: Hide lights and switches when placing sockets!
                       handleUpdateVisibility({
                         ...effectiveVisibility,
                         lights: false,
@@ -1901,7 +1933,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                         switchboards: true,
                       });
                     }}
-                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition ${
+                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition cursor-pointer ${
                       !effectiveVisibility.lights && !effectiveVisibility.switches && effectiveVisibility.sockets
                         ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 font-bold'
                         : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50'
@@ -1922,7 +1954,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                         switchboards: true,
                       });
                     }}
-                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition ${
+                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition cursor-pointer ${
                       effectiveVisibility.sockets && !effectiveVisibility.switches && !effectiveVisibility.lights && !effectiveVisibility.appliances
                         ? 'bg-sky-500/25 text-sky-300 border border-sky-500/50 font-bold'
                         : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50'
@@ -1943,7 +1975,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                         switchboards: true,
                       });
                     }}
-                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition ${
+                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition cursor-pointer ${
                       !effectiveVisibility.sockets && effectiveVisibility.switches && effectiveVisibility.lights && !effectiveVisibility.appliances
                         ? 'bg-yellow-500/25 text-yellow-300 border border-yellow-500/50 font-bold'
                         : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50'
@@ -1958,7 +1990,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                     onClick={() => {
                       handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY);
                     }}
-                    className="px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50"
+                    className="px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50 cursor-pointer"
                     title="Zobrazí všetky komponenty na podlaží"
                   >
                     <span className="truncate">✨ Všetko zobrazené</span>
@@ -1987,7 +2019,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                           [key]: !isVisible,
                         });
                       }}
-                      className={`w-full p-2 rounded-lg flex items-center justify-between transition text-left ${
+                      className={`w-full p-2 rounded-lg flex items-center justify-between transition text-left cursor-pointer ${
                         isVisible
                           ? 'bg-slate-800/60 hover:bg-slate-800 text-slate-200 border border-slate-700/40'
                           : 'bg-slate-950/60 hover:bg-slate-900 text-slate-500 border border-slate-800/50 opacity-60'
@@ -2018,20 +2050,6 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                   );
                 })}
               </div>
-
-              {/* Stavový riadok pri skrytí */}
-              {!allVisible && (
-                <div className="p-2 rounded-lg bg-amber-950/40 border border-amber-600/30 text-[10.5px] text-amber-200 flex items-center justify-between">
-                  <span>⚠️ Skryté: {hiddenCategories.map((c) => COMPONENT_CATEGORY_CONFIG[c]?.shortLabel || c).join(', ')}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY)}
-                    className="underline font-bold text-amber-300 hover:text-white"
-                  >
-                    Obnoviť
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -2041,7 +2059,8 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
             setScale(65);
             setPan({ x: 180, y: 120 });
           }}
-          className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition"
+          className="px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs font-semibold transition cursor-pointer"
+          title="Vycentrovať pohľad do východiskovej polohy"
         >
           Vycentrovať
         </button>
@@ -2060,72 +2079,18 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                 setCalibActive(true);
               }
             }}
-            className={`ml-1 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition shadow-sm active:scale-95 ${
+            className={`px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-sm active:scale-95 cursor-pointer ${
               isCalibActive
-                ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400/60 font-black'
+                ? 'bg-amber-500 text-slate-950 font-black'
                 : 'bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-500/40'
             }`}
             title="Prispôsobiť mierku podkladu natiahnutím čiary na kótu výkresu"
           >
             <Ruler className="w-3.5 h-3.5 text-amber-400" />
-            <span>{isCalibActive ? 'Ukončiť meranie kóty' : 'Kalibrovať mierku z kóty'}</span>
+            <span>{isCalibActive ? 'Ukončiť kalibráciu' : 'Kalibrovať mierku'}</span>
           </button>
         )}
       </div>
-
-      {/* Floating Alert: When some component layers are hidden */}
-      {!allVisible && (
-        <div
-          className="absolute top-16 left-4 z-20 flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-amber-500/50 text-[11px] text-amber-200 shadow-xl no-canvas-click"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <EyeOff className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span>
-            Filter vrstiev aktívny: skryté <strong>{hiddenCategories.map((c) => COMPONENT_CATEGORY_CONFIG[c]?.shortLabel || c).join(', ')}</strong> ({visibleComponentCount}/{totalComponentCount} viditeľných)
-          </span>
-          <button
-            type="button"
-            onClick={() => handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY)}
-            className="ml-2 px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] transition shrink-0"
-          >
-            Zobraziť všetky
-          </button>
-        </div>
-      )}
-
-      {/* Step 3: Interactive In-Canvas STN Guidance Bar */}
-      {currentStep === 3 && (
-        <div
-          className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-slate-900/95 backdrop-blur-md px-4 py-2 rounded-2xl border border-teal-500/50 shadow-2xl text-xs text-slate-200 no-canvas-click select-none"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center gap-2 border-r border-slate-800 pr-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse"></span>
-            <span className="font-bold text-teal-300">STN 33 2130 Zóny:</span>
-          </div>
-
-          <span className="text-slate-300">
-            {activeTool === 'select'
-              ? '💡 Kliknite na zónu pre úpravu. Potiahnutím za stred zónu presuniete, za modré okraje zmeníte rozmer.'
-              : activeTool === 'zone_kitchen'
-              ? '💡 Kliknite a ťahajte po stene pre vyznačenie linky len na požadovanom úseku (napr. 2.4 m).'
-              : activeTool === 'zone_segment'
-              ? '💡 Kliknite a ťahajte po stene pre vymedzenie úseku zóny.'
-              : 'Zakreslite inštalačné zóny podľa normy STN.'}
-          </span>
-
-          {onOpenZoneGuide && (
-            <button
-              onClick={onOpenZoneGuide}
-              className="ml-2 px-2.5 py-1 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/50 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 shrink-0"
-              title="Otvoriť podrobného sprievodcu normou STN 33 2130 a návod ako umiestňovať zóny"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>Návod STN</span>
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Calibration Success Toast */}
       {calibrationSuccessToast && (
@@ -2444,32 +2409,83 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         </div>
       )}
 
-      {/* Bottom Shortcuts Status Bar */}
-      <div className="absolute bottom-4 left-4 z-20 hidden md:flex items-center gap-3 bg-slate-900/85 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-slate-800 text-[11px] text-slate-400 shadow-xl select-none pointer-events-none">
-        <span className="flex items-center gap-1.5">
-          <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] text-slate-200 font-mono font-bold">Del</kbd>
-          <span>Zmazať označené</span>
-        </span>
-        <span className="text-slate-700">•</span>
-        <span className="flex items-center gap-1.5">
-          <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] text-slate-200 font-mono font-bold">Ctrl+Z</kbd>
-          <span>Krok späť</span>
-        </span>
-        <span className="text-slate-700">•</span>
-        <span className="flex items-center gap-1.5">
-          <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] text-slate-200 font-mono font-bold">Ctrl+Y</kbd>
-          <span>Krok vpred</span>
-        </span>
-        <span className="text-slate-700">•</span>
-        <span className="flex items-center gap-1.5">
-          <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] text-slate-200 font-mono font-bold">ESC</kbd>
-          <span>Zrušiť kreslenie</span>
-        </span>
-        <span className="text-slate-700">•</span>
-        <span className="flex items-center gap-1.5">
-          <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] text-sky-300 font-mono font-bold">Ťahanie steny</kbd>
-          <span>Stred = celá stena | Body = dĺžka a uhol</span>
-        </span>
+      {/* Bottom HUD: Coordinates + Snap + Zoom Controls + Shortcuts Popover */}
+      <div className="absolute bottom-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none select-none">
+        {/* Left HUD: Coordinates & Snap */}
+        <div className="pointer-events-auto flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-800 text-[11px] text-slate-300 shadow-xl">
+          <div className="flex items-center gap-1.5 font-mono">
+            <span className="text-slate-500">X:</span>
+            <span className="text-sky-300 font-bold">{cursorPos.x.toFixed(2)}m</span>
+            <span className="text-slate-500 ml-1">Y:</span>
+            <span className="text-sky-300 font-bold">{cursorPos.y.toFixed(2)}m</span>
+          </div>
+          <span className="text-slate-700">|</span>
+          <span className="flex items-center gap-1 text-[10.5px] text-emerald-400 font-medium">
+            <Magnet className="w-3 h-3" /> 90° Snap
+          </span>
+          <span className="text-slate-700">|</span>
+          {/* Shortcuts popover toggle */}
+          <div className="relative">
+            <button
+              onClick={() => setIsShortcutsOpen((p) => !p)}
+              className={`px-2 py-0.5 rounded text-[10.5px] transition cursor-pointer flex items-center gap-1 ${
+                isShortcutsOpen
+                  ? 'bg-sky-500 text-white font-bold'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+              }`}
+              title="Zobraziť klávesové skratky"
+            >
+              ⌨ Skratky
+            </button>
+            {isShortcutsOpen && (
+              <div className="absolute bottom-full left-0 mb-2 w-64 bg-slate-900/98 backdrop-blur-xl border border-slate-700 rounded-xl p-3 shadow-2xl flex flex-col gap-1.5 text-[11px] text-slate-300 pointer-events-auto">
+                <div className="font-bold text-white text-xs pb-1 border-b border-slate-800 flex items-center justify-between">
+                  <span>Klávesové skratky CAD</span>
+                  <button onClick={() => setIsShortcutsOpen(false)} className="text-[10px] text-slate-400 hover:text-white cursor-pointer">✕</button>
+                </div>
+                <div className="flex justify-between items-center"><kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-sky-300 font-mono text-[10px]">Del</kbd> <span>Zmazať označený prvok</span></div>
+                <div className="flex justify-between items-center"><kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 font-mono text-[10px]">Ctrl+Z</kbd> <span>Krok späť</span></div>
+                <div className="flex justify-between items-center"><kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 font-mono text-[10px]">Ctrl+Y</kbd> <span>Krok vpred</span></div>
+                <div className="flex justify-between items-center"><kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 font-mono text-[10px]">ESC</kbd> <span>Zrušiť kreslenie / výber</span></div>
+                <div className="flex justify-between items-center"><kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 font-mono text-[10px]">Koliesko</kbd> <span>Priblíženie & Posun (Pan)</span></div>
+                <div className="flex justify-between items-center"><kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-slate-200 font-mono text-[10px]">Ťahanie steny</kbd> <span>Stred = celá / Bod = uhol</span></div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right HUD: Zoom Controls (+, -, %, Fit) */}
+        <div className="pointer-events-auto flex items-center gap-1 bg-slate-900/95 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-xl text-xs">
+          <button
+            onClick={() => handleZoomStep(-0.2)}
+            className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
+            title="Oddialiť pohľad"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => { setScale(65); setPan({ x: 180, y: 120 }); }}
+            className="px-2 py-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition font-mono text-[10.5px] font-bold cursor-pointer"
+            title="Obnoviť mierku (100%)"
+          >
+            {Math.round((scale / 65) * 100)}%
+          </button>
+          <button
+            onClick={() => handleZoomStep(0.2)}
+            className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
+            title="Priblížiť pohľad"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <div className="w-px h-3.5 bg-slate-800" />
+          <button
+            onClick={handleFitView}
+            className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
+            title="Prispôsobiť celý pôdorys obrazovke (Fit Extents)"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* MANUAL ROUTING MODE BANNER */}
