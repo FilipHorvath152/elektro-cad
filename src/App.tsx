@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CableRoute, ElectricalComponent, ElectricalComponentType, Floor, PathwayPreference, ProjectData, SwitchboardEnclosure, Wall, WorkflowStep } from './types/cad';
+import { CableRoute, ElectricalComponent, ElectricalComponentType, Floor, InstallationZone, PathwayPreference, ProjectData, SwitchboardEnclosure, Wall, WorkflowStep } from './types/cad';
 import { DEMO_PROJECT, EMPTY_PROJECT, INITIAL_PROJECT } from './constants/initialProject';
 import { Header } from './components/Header';
 import { WorkflowStepper } from './components/WorkflowStepper';
@@ -8,6 +8,8 @@ import { CADCanvas2D } from './components/CADCanvas2D';
 import { CADViewer3D } from './components/CADViewer3D';
 import { ComponentPropertiesPanel } from './components/ComponentPropertiesPanel';
 import { WallPropertiesPanel } from './components/WallPropertiesPanel';
+import { ZonePropertiesPanel } from './components/ZonePropertiesPanel';
+import { InstallationZonesGuideModal } from './components/InstallationZonesGuideModal';
 import { SwitchboardDesigner } from './components/SwitchboardDesigner';
 import { SchematicViewer } from './components/SchematicViewer';
 import { BOMReport } from './components/BOMReport';
@@ -57,6 +59,8 @@ export function App() {
   const [selectedComponentType, setSelectedComponentType] = useState<ElectricalComponentType | undefined>('socket_230');
   const [selectedComponentId, setSelectedComponentId] = useState<string | undefined>(undefined);
   const [selectedWallId, setSelectedWallId] = useState<string | undefined>(undefined);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | undefined>(undefined);
+  const [isZoneGuideOpen, setIsZoneGuideOpen] = useState<boolean>(false);
   const [selectedOpeningId, setSelectedOpeningId] = useState<string | undefined>(undefined);
   const [defaultDoorSize, setDefaultDoorSize] = useState<{ width: number; height: number }>({ width: 0.9, height: 2.0 });
   const [defaultWindowSize, setDefaultWindowSize] = useState<{ width: number; height: number; elevation: number }>({ width: 1.2, height: 1.4, elevation: 0.9 });
@@ -329,6 +333,7 @@ export function App() {
 
   const selectedComponent = currentFloor.components.find((c) => c.id === selectedComponentId);
   const selectedWall = currentFloor.walls.find((w) => w.id === selectedWallId);
+  const selectedZone = currentFloor.installationZones?.find((z) => z.id === selectedZoneId);
   const activeSwitchboard = currentFloor.switchboards.find((sb) => sb.id === selectedSwitchboardId) || currentFloor.switchboards[0];
   const switchboard = activeSwitchboard || currentFloor.switchboards[0];
 
@@ -386,6 +391,21 @@ export function App() {
       components: prev.components.map((c) => (c.wallId === id ? { ...c, wallId: undefined } : c)),
     }));
     setSelectedWallId((curr) => (curr === id ? undefined : curr));
+  }, [handleUpdateCurrentFloor]);
+
+  const handleUpdateZone = (updated: InstallationZone) => {
+    handleUpdateCurrentFloor((prev) => ({
+      ...prev,
+      installationZones: prev.installationZones?.map((z) => (z.id === updated.id ? updated : z)),
+    }));
+  };
+
+  const handleDeleteZone = useCallback((id: string) => {
+    handleUpdateCurrentFloor((prev) => ({
+      ...prev,
+      installationZones: prev.installationZones?.filter((z) => z.id !== id),
+    }));
+    setSelectedZoneId(undefined);
   }, [handleUpdateCurrentFloor]);
 
   const handleUpdateSwitchboard = (updater: (prev: SwitchboardEnclosure) => SwitchboardEnclosure) => {
@@ -717,6 +737,7 @@ export function App() {
             onGenerateZones={handleGenerateInstallationZones}
             onClearZones={handleClearInstallationZones}
             zoneCount={currentFloor.installationZones?.length || 0}
+            onOpenZoneGuide={() => setIsZoneGuideOpen(true)}
           />
         )}
 
@@ -733,6 +754,7 @@ export function App() {
               onSelectWall={(id) => {
                 setSelectedWallId(id);
                 if (!id) setSelectedOpeningId(undefined);
+                if (id) setSelectedZoneId(undefined);
               }}
               selectedOpeningId={selectedOpeningId}
               onSelectOpening={setSelectedOpeningId}
@@ -752,6 +774,16 @@ export function App() {
               onCursorMove={(pos) => {
                 collabManager.broadcastCursor({ ...pos, floorId: currentFloor.id });
               }}
+              selectedZoneId={selectedZoneId}
+              onSelectZone={(id) => {
+                setSelectedZoneId(id);
+                if (id) {
+                  setSelectedWallId(undefined);
+                  setSelectedComponentId(undefined);
+                  setSelectedOpeningId(undefined);
+                }
+              }}
+              onOpenZoneGuide={() => setIsZoneGuideOpen(true)}
             />
           )}
 
@@ -851,6 +883,18 @@ export function App() {
             onClose={() => setSelectedComponentId(undefined)}
           />
         )}
+
+        {/* Right Properties Panel: Installation Zone Properties */}
+        {(activeView === '2d' || activeView === '3d') && !selectedWall && !selectedComponent && selectedZone && (
+          <ZonePropertiesPanel
+            zone={selectedZone}
+            allWalls={currentFloor.walls}
+            floorHeight={currentFloor.height}
+            onUpdateZone={handleUpdateZone}
+            onDeleteZone={handleDeleteZone}
+            onClose={() => setSelectedZoneId(undefined)}
+          />
+        )}
       </div>
 
       {/* PDF Floorplan Import Modal */}
@@ -869,6 +913,16 @@ export function App() {
         collaborators={collaborators}
         projectData={project}
         onImportProject={handleCollabImportProject}
+      />
+
+      {/* Installation Zones STN 33 2130 Guide Modal */}
+      <InstallationZonesGuideModal
+        isOpen={isZoneGuideOpen}
+        onClose={() => setIsZoneGuideOpen(false)}
+        onSelectTool={(tool) => {
+          setActiveTool(tool);
+          setIsZoneGuideOpen(false);
+        }}
       />
     </div>
   );

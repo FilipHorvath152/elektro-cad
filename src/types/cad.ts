@@ -185,6 +185,7 @@ export interface InstallationZone {
   widthMeters: number;              // šírka pásma v metroch (napr. 0.30 pre horizontálne, 0.20 pre vertikálne)
   elevationBottomMeters: number;    // Z spodná hrana v metroch (napr. 0.15)
   elevationTopMeters: number;       // Z horná hrana v metroch (napr. 0.45)
+  side?: 'both' | 'left' | 'right'; // na ktorej strane steny sa zóna nachádza (predvolené 'both')
   polygon?: Point2D[];              // pre plošné zóny na podlahe (vaňa, sprcha, káblový koridor)
   center?: Point2D;
   dimensions?: { width: number; height: number };

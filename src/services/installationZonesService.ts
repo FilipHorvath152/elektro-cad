@@ -347,3 +347,105 @@ export function addCeilingCorridor(
 
   return [...existing, newZone];
 }
+
+/**
+ * Pridá inštalačnú zónu na konkrétny vymedzený úsek steny (nie celú stenu)
+ * Vhodné pre kuchynskú linku, pracovný stôl, TV stenu alebo vlastný káblový koridor.
+ */
+export function addWallZoneSegment(
+  wallId: string,
+  startMeters: number,
+  lengthMeters: number,
+  type: InstallationZone['type'],
+  floor: Floor,
+  options?: Partial<InstallationZone>
+): InstallationZone[] {
+  const existing = floor.installationZones || [];
+  const wall = floor.walls.find((w) => w.id === wallId);
+  if (!wall) return existing;
+
+  const dx = wall.end.x - wall.start.x;
+  const dy = wall.end.y - wall.start.y;
+  const wallLength = Math.hypot(dx, dy);
+
+  const clampedStart = Math.max(0, Math.min(wallLength - 0.1, startMeters));
+  const clampedLength = Math.max(0.1, Math.min(wallLength - clampedStart, lengthMeters));
+  const floorHeight = floor.height || 2.7;
+
+  let name = `Vymedzená zóna (${clampedLength.toFixed(2)} m)`;
+  let elevationBottom = 0.15;
+  let elevationTop = 0.45;
+  let color = '#38bdf8';
+  let desc = 'Vymedzený úsek inštalačnej zóny na stene.';
+  let stnRef = 'STN 33 2130 čl. 7.6';
+
+  if (type === 'zvs') {
+    name = `ZVS – Kuchynská linka (${clampedLength.toFixed(2)} m)`;
+    elevationBottom = 0.90;
+    elevationTop = 1.20;
+    color = '#f59e0b';
+    desc = 'STN 33 2130: Stredná vodorovná zóna 90–120 cm (os 115 cm) vymedzená presne pre kuchynskú linku a pracovnú dosku.';
+    stnRef = 'STN 33 2130 čl. 7.6.2';
+  } else if (type === 'zvd') {
+    name = `ZVD – Dolná zóna (${clampedLength.toFixed(2)} m)`;
+    elevationBottom = 0.15;
+    elevationTop = 0.45;
+    color = '#2dd4bf';
+    desc = 'STN 33 2130: Dolná vodorovná zóna 15–45 cm nad podlahou pre zásuvkové okruhy.';
+    stnRef = 'STN 33 2130 čl. 7.6.2';
+  } else if (type === 'zvh') {
+    name = `ZVH – Horná zóna (${clampedLength.toFixed(2)} m)`;
+    elevationBottom = Number(Math.max(0.1, floorHeight - 0.45).toFixed(2));
+    elevationTop = Number(Math.max(0.2, floorHeight - 0.15).toFixed(2));
+    color = '#38bdf8';
+    desc = 'STN 33 2130: Horná vodorovná zóna 15–45 cm pod stropom pre káblové magistrály a svetlá.';
+    stnRef = 'STN 33 2130 čl. 7.6.2';
+  } else if (type === 'zvz') {
+    name = `ZVZ – Zvislý úsek (${clampedLength.toFixed(2)} m)`;
+    elevationBottom = 0.15;
+    elevationTop = Number(Math.max(0.2, floorHeight - 0.15).toFixed(2));
+    color = '#34d399';
+    desc = 'STN 33 2130: Zvislá inštalačná zóna pre káblový zvod.';
+    stnRef = 'STN 33 2130 čl. 7.6.3';
+  }
+
+  const newZone: InstallationZone = {
+    id: `zone-seg-${wallId}-${Date.now()}`,
+    name,
+    type,
+    wallId,
+    distanceFromStartMeters: Number(clampedStart.toFixed(2)),
+    lengthMeters: Number(clampedLength.toFixed(2)),
+    widthMeters: 0.30,
+    elevationBottomMeters: elevationBottom,
+    elevationTopMeters: elevationTop,
+    side: 'both',
+    description: desc,
+    stnReference: stnRef,
+    color,
+    isAutomatic: false,
+    ...options,
+  };
+
+  return [...existing, newZone];
+}
+
+/**
+ * Aktualizuje parametre konkrétnej inštalačnej zóny
+ */
+export function updateInstallationZone(
+  zoneId: string,
+  updates: Partial<InstallationZone>,
+  floor: Floor
+): InstallationZone[] {
+  const existing = floor.installationZones || [];
+  return existing.map((z) => (z.id === zoneId ? { ...z, ...updates } : z));
+}
+
+/**
+ * Odstráni inštalačnú zónu podľa ID
+ */
+export function deleteInstallationZone(zoneId: string, floor: Floor): InstallationZone[] {
+  const existing = floor.installationZones || [];
+  return existing.filter((z) => z.id !== zoneId);
+}

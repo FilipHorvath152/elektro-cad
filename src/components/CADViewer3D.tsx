@@ -95,6 +95,9 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
       const angle = Math.atan2(dy, dx);
       const midX = (wall.start.x + wall.end.x) / 2;
       const midZ = (wall.start.y + wall.end.y) / 2;
+      const ux = wallLen > 0.0001 ? dx / wallLen : 0;
+      const uy = wallLen > 0.0001 ? dy / wallLen : 0;
+      const wallTotalHeight = wall.height || floor.height || 2.70;
 
       // 6a. Check for Attic Sloped Wall / Roof Slope (Šikmina podkrovia)
       if (wall.atticSlope?.enabled) {
@@ -196,34 +199,53 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
         scene.add(wallMesh);
       }
 
-      // 3D STN Installation Zones on Wall (ZVD, ZVH, ZVS)
-      const wallTotalHeight = wall.height || floor.height || 2.70;
-      const isKitchenWall = floor.installationZones?.some((z) => z.wallId === wall.id && z.type === 'zvs');
+      // 3D STN Installation Zones on Wall (Rendered with exact sub-segment length and position)
+      const wallZones = floor.installationZones?.filter((z) => z.wallId === wall.id) || [];
+      if (wallZones.length > 0) {
+        wallZones.forEach((z) => {
+          const sDist = Math.max(0, Math.min(wallLen - 0.1, z.distanceFromStartMeters ?? 0));
+          const zLen = Math.max(0.1, Math.min(wallLen - sDist, z.lengthMeters ?? (wallLen - sDist)));
+          const centerDist = sDist + zLen / 2;
+          const zCenterX = wall.start.x + ux * centerDist;
+          const zCenterZ = wall.start.y + uy * centerDist;
+          const zHeight = Math.max(0.1, z.elevationTopMeters - z.elevationBottomMeters);
+          const zCenterY = z.elevationBottomMeters + zHeight / 2;
 
-      // ZVD: Dolná inštalačná zóna (os 30 cm nad podlahou, výška 30 cm)
-      const zvdGeo = new THREE.BoxGeometry(wallLen, 0.30, wall.thickness + 0.01);
-      const zvdMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.12 });
-      const zvdMesh = new THREE.Mesh(zvdGeo, zvdMat);
-      zvdMesh.position.set(midX, 0.30, midZ);
-      zvdMesh.rotation.y = -angle;
-      scene.add(zvdMesh);
+          let colorHex = 0x38bdf8;
+          let opacity = 0.14;
+          if (z.type === 'zvs') {
+            colorHex = 0xf59e0b;
+            opacity = 0.25;
+          } else if (z.type === 'zvd') {
+            colorHex = 0x2dd4bf;
+            opacity = 0.14;
+          } else if (z.type === 'zvz' || z.type === 'zvr') {
+            colorHex = 0x34d399;
+            opacity = 0.18;
+          }
 
-      // ZVH: Horná inštalačná zóna (os 30 cm pod stropom, výška 30 cm)
-      const zvhGeo = new THREE.BoxGeometry(wallLen, 0.30, wall.thickness + 0.01);
-      const zvhMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.12 });
-      const zvhMesh = new THREE.Mesh(zvhGeo, zvhMat);
-      zvhMesh.position.set(midX, Math.max(0.4, wallTotalHeight - 0.30), midZ);
-      zvhMesh.rotation.y = -angle;
-      scene.add(zvhMesh);
+          const zoneGeo = new THREE.BoxGeometry(zLen, zHeight, wall.thickness + 0.015);
+          const zoneMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity });
+          const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
+          zoneMesh.position.set(zCenterX, zCenterY, zCenterZ);
+          zoneMesh.rotation.y = -angle;
+          scene.add(zoneMesh);
+        });
+      } else {
+        // Fallback default guides for wall if no explicit zones generated yet
+        const zvdGeo = new THREE.BoxGeometry(wallLen, 0.30, wall.thickness + 0.01);
+        const zvdMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.10 });
+        const zvdMesh = new THREE.Mesh(zvdGeo, zvdMat);
+        zvdMesh.position.set(midX, 0.30, midZ);
+        zvdMesh.rotation.y = -angle;
+        scene.add(zvdMesh);
 
-      // ZVS: Stredná inštalačná zóna pre kuchyne a linky (os 105-115 cm, výška 30 cm)
-      if (isKitchenWall) {
-        const zvsGeo = new THREE.BoxGeometry(wallLen, 0.30, wall.thickness + 0.015);
-        const zvsMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.22 });
-        const zvsMesh = new THREE.Mesh(zvsGeo, zvsMat);
-        zvsMesh.position.set(midX, 1.05, midZ);
-        zvsMesh.rotation.y = -angle;
-        scene.add(zvsMesh);
+        const zvhGeo = new THREE.BoxGeometry(wallLen, 0.30, wall.thickness + 0.01);
+        const zvhMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.10 });
+        const zvhMesh = new THREE.Mesh(zvhGeo, zvhMat);
+        zvhMesh.position.set(midX, Math.max(0.4, wallTotalHeight - 0.30), midZ);
+        zvhMesh.rotation.y = -angle;
+        scene.add(zvhMesh);
       }
 
       // Openings (door & window cuts visual markers)

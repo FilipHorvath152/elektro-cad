@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ElectricalComponent, ElectricalComponentType, Floor, InstallationZone, Opening, PathwayPreference, Point2D, Point3D, SwitchboardEnclosure, Wall, WorkflowStep } from '../types/cad';
+import { ElectricalComponent, ElectricalComponentType, Floor, InstallationZone, InstallationZoneType, Opening, PathwayPreference, Point2D, Point3D, SwitchboardEnclosure, Wall, WorkflowStep } from '../types/cad';
 import { getRecommendedHeight, STN_HEIGHT_RECOMMENDATIONS } from '../constants/stnStandards';
 import { getDefaultCatalogItem, recommendShellyModule } from '../constants/catalog';
 import { renderSTNSymbol } from '../services/schematicService';
@@ -9,13 +9,16 @@ import {
   addVerticalZoneOnWall,
   addBathroomSafetyZone,
   addCeilingCorridor,
+  addWallZoneSegment,
+  updateInstallationZone,
+  deleteInstallationZone,
 } from '../services/installationZonesService';
 import {
   findWallSnapCandidate,
   resolveAllFloorWallIntersections,
   resolveWallIntersections,
 } from '../services/wallIntersectionService';
-import { Eye, EyeOff, Box, Compass, Navigation, Magnet, GitFork, Ruler, CheckCircle2, GripHorizontal, Minimize2, ShieldCheck, Sparkles, Columns } from 'lucide-react';
+import { Eye, EyeOff, Box, Compass, Navigation, Magnet, GitFork, Ruler, CheckCircle2, GripHorizontal, Minimize2, ShieldCheck, Sparkles, Columns, BookOpen } from 'lucide-react';
 
 interface CADCanvas2DProps {
   floor: Floor;
@@ -41,6 +44,9 @@ interface CADCanvas2DProps {
   selectedSwitchboardKind?: 'main' | 'sub';
   remoteCursors?: Record<string, { x: number; y: number; floorId: string; user?: any }>;
   onCursorMove?: (pos: Point2D) => void;
+  selectedZoneId?: string;
+  onSelectZone?: (id: string | undefined) => void;
+  onOpenZoneGuide?: () => void;
 }
 
 export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
@@ -67,6 +73,9 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
   selectedSwitchboardKind = 'main',
   remoteCursors,
   onCursorMove,
+  selectedZoneId: externalSelectedZoneId,
+  onSelectZone,
+  onOpenZoneGuide,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -115,7 +124,35 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
 
   // Step 3: Installation Zones State
   const [ceilingZoneStart, setCeilingZoneStart] = useState<Point2D | null>(null);
-  const [selectedZoneId, setSelectedZoneId] = useState<string | undefined>(undefined);
+  const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | undefined>(undefined);
+  const activeSelectedZoneId = externalSelectedZoneId !== undefined ? externalSelectedZoneId : internalSelectedZoneId;
+  const setEffectiveSelectedZoneId = (id: string | undefined) => {
+    setInternalSelectedZoneId(id);
+    if (onSelectZone) onSelectZone(id);
+  };
+
+  // Interactive Installation Zone drag state (Move along wall, resize start/end handles, or drag area/bathroom zones)
+  const [zoneDragState, setZoneDragState] = useState<{
+    zoneId: string;
+    mode: 'move' | 'start' | 'end' | 'area_center' | 'area_corner';
+    wallId?: string;
+    startMouseWorld: Point2D;
+    initialDist: number;
+    initialLength: number;
+    initialWidth: number;
+    initialCenter?: Point2D;
+    initialDimensions?: { width: number; height: number };
+    cornerIndex?: number;
+    hasMoved: boolean;
+  } | null>(null);
+
+  // Drawing new zone sub-segment along a wall (e.g. kitchen counter 2.4m, not entire wall)
+  const [zoneDrawState, setZoneDrawState] = useState<{
+    wallId: string;
+    startDist: number;
+    currentDist: number;
+    type: InstallationZoneType;
+  } | null>(null);
 
   // Display toggles
   const [showZones, setShowZones] = useState(true);
@@ -424,19 +461,19 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
           setCeilingZoneStart(null);
           return;
         }
-        if (selectedZoneId) {
+        if (activeSelectedZoneId) {
           e.preventDefault();
-          setSelectedZoneId(undefined);
+          setEffectiveSelectedZoneId(undefined);
           return;
         }
       }
-      if (selectedZoneId && (e.key === 'Delete' || e.key === 'Backspace')) {
+      if (activeSelectedZoneId && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
         onUpdateFloor((prev) => ({
           ...prev,
-          installationZones: prev.installationZones?.filter((z) => z.id !== selectedZoneId),
+          installationZones: prev.installationZones?.filter((z) => z.id !== activeSelectedZoneId),
         }));
-        setSelectedZoneId(undefined);
+        setEffectiveSelectedZoneId(undefined);
         return;
       }
     };
@@ -456,6 +493,12 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
             const resolved = resolveAllFloorWallIntersections(prev);
             return resolved;
           }, true);
+        }
+        return null;
+      });
+      setZoneDragState((curr) => {
+        if (curr && curr.hasMoved) {
+          onUpdateFloor((prev) => ({ ...prev }), true);
         }
         return null;
       });
@@ -592,29 +635,22 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
       return;
     }
 
-    // Step 3: Installation Zone Tools
-    if (activeTool === 'zone_kitchen') {
-      const wallSnap = findNearestWall(worldPt, 0.45);
-      if (wallSnap) {
-        onUpdateFloor((prev) => ({
-          ...prev,
-          installationZones: toggleKitchenZoneOnWall(wallSnap.wall.id, prev),
-        }));
-      }
-      return;
-    }
-
-    if (activeTool === 'zone_vertical') {
+    // Step 3: Installation Zone Tools (drag along wall to select specific area, or click for preset)
+    if (activeTool === 'zone_kitchen' || activeTool === 'zone_segment' || activeTool === 'zone_vertical') {
       const wallSnap = findNearestWall(worldPt, 0.45);
       if (wallSnap) {
         const dx = wallSnap.wall.end.x - wallSnap.wall.start.x;
         const dy = wallSnap.wall.end.y - wallSnap.wall.start.y;
         const len = Math.hypot(dx, dy);
-        const dist = wallSnap.ratio * len;
-        onUpdateFloor((prev) => ({
-          ...prev,
-          installationZones: addVerticalZoneOnWall(wallSnap.wall.id, dist, prev),
-        }));
+        const dist = Number((wallSnap.ratio * len).toFixed(2));
+        const zoneType: InstallationZoneType =
+          activeTool === 'zone_kitchen' ? 'zvs' : activeTool === 'zone_vertical' ? 'zvz' : 'zvs';
+        setZoneDrawState({
+          wallId: wallSnap.wall.id,
+          startDist: dist,
+          currentDist: dist,
+          type: zoneType,
+        });
       }
       return;
     }
@@ -952,6 +988,39 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
     });
   };
 
+  // Start dragging installation zone (move along wall, resize start/end handles, or move area zones)
+  const handleStartZoneDrag = (
+    zone: InstallationZone,
+    mode: 'move' | 'start' | 'end' | 'area_center' | 'area_corner',
+    e: React.MouseEvent,
+    cornerIndex?: number
+  ) => {
+    if (e.button !== 0 || e.altKey) return;
+    e.stopPropagation();
+    setEffectiveSelectedZoneId(zone.id);
+    onSelectWall(undefined);
+    onSelectComponent(undefined);
+    if (onSelectOpening) onSelectOpening(undefined);
+
+    const mouseWorld = screenToWorld(e.clientX, e.clientY);
+    const wall = zone.wallId ? floor.walls.find((w) => w.id === zone.wallId) : undefined;
+    const wallLen = wall ? Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y) : 2.0;
+
+    setZoneDragState({
+      zoneId: zone.id,
+      mode,
+      wallId: zone.wallId,
+      startMouseWorld: mouseWorld,
+      initialDist: zone.distanceFromStartMeters ?? 0,
+      initialLength: zone.lengthMeters ?? wallLen,
+      initialWidth: zone.widthMeters ?? 0.30,
+      initialCenter: zone.center ? { ...zone.center } : undefined,
+      initialDimensions: zone.dimensions ? { ...zone.dimensions } : undefined,
+      cornerIndex,
+      hasMoved: false,
+    });
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning) {
       setPan({
@@ -1159,6 +1228,130 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
       return;
     }
 
+    // Handle interactive Installation Zone dragging (Move along wall, resize start/end handles, move area zones)
+    if (zoneDragState) {
+      const targetWall = zoneDragState.wallId
+        ? floor.walls.find((w) => w.id === zoneDragState.wallId)
+        : undefined;
+
+      if (targetWall) {
+        const wdx = targetWall.end.x - targetWall.start.x;
+        const wdy = targetWall.end.y - targetWall.start.y;
+        const wLen = Math.hypot(wdx, wdy);
+        if (wLen > 0.01) {
+          const ux = wdx / wLen;
+          const uy = wdy / wLen;
+          const currentProj = (worldPt.x - targetWall.start.x) * ux + (worldPt.y - targetWall.start.y) * uy;
+          const startProj = (zoneDragState.startMouseWorld.x - targetWall.start.x) * ux + (zoneDragState.startMouseWorld.y - targetWall.start.y) * uy;
+          const deltaM = currentProj - startProj;
+
+          if (Math.abs(deltaM) > 0.02) {
+            setZoneDragState((prev) => (prev ? { ...prev, hasMoved: true } : null));
+          }
+
+          if (zoneDragState.mode === 'move') {
+            const maxStart = Math.max(0, wLen - zoneDragState.initialLength);
+            const rawNewStart = zoneDragState.initialDist + deltaM;
+            const clamped = Math.max(0, Math.min(maxStart, rawNewStart));
+            const snappedStart = Math.round(clamped * 20) / 20;
+
+            onUpdateFloor((prev) => ({
+              ...prev,
+              installationZones: prev.installationZones?.map((z) =>
+                z.id === zoneDragState.zoneId
+                  ? { ...z, distanceFromStartMeters: Number(snappedStart.toFixed(2)) }
+                  : z
+              ),
+            }), false);
+          } else if (zoneDragState.mode === 'start') {
+            const currentEnd = zoneDragState.initialDist + zoneDragState.initialLength;
+            const rawNewStart = currentProj;
+            const clamped = Math.max(0, Math.min(currentEnd - 0.20, rawNewStart));
+            const snappedStart = Math.round(clamped * 20) / 20;
+            const newLen = Number((currentEnd - snappedStart).toFixed(2));
+
+            onUpdateFloor((prev) => ({
+              ...prev,
+              installationZones: prev.installationZones?.map((z) =>
+                z.id === zoneDragState.zoneId
+                  ? {
+                      ...z,
+                      distanceFromStartMeters: Number(snappedStart.toFixed(2)),
+                      lengthMeters: newLen,
+                    }
+                  : z
+              ),
+            }), false);
+          } else if (zoneDragState.mode === 'end') {
+            const currentStart = zoneDragState.initialDist;
+            const rawNewEnd = currentProj;
+            const clamped = Math.max(currentStart + 0.20, Math.min(wLen, rawNewEnd));
+            const snappedEnd = Math.round(clamped * 20) / 20;
+            const newLen = Number((snappedEnd - currentStart).toFixed(2));
+
+            onUpdateFloor((prev) => ({
+              ...prev,
+              installationZones: prev.installationZones?.map((z) =>
+                z.id === zoneDragState.zoneId
+                  ? { ...z, lengthMeters: newLen }
+                  : z
+              ),
+            }), false);
+          }
+        }
+      } else if (zoneDragState.initialCenter) {
+        // Area / Bathroom zone dragging
+        const dx = worldPt.x - zoneDragState.startMouseWorld.x;
+        const dy = worldPt.y - zoneDragState.startMouseWorld.y;
+        if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) {
+          setZoneDragState((prev) => (prev ? { ...prev, hasMoved: true } : null));
+        }
+
+        if (zoneDragState.mode === 'area_center') {
+          const newCenter = {
+            x: Number((zoneDragState.initialCenter.x + dx).toFixed(2)),
+            y: Number((zoneDragState.initialCenter.y + dy).toFixed(2)),
+          };
+          onUpdateFloor((prev) => ({
+            ...prev,
+            installationZones: prev.installationZones?.map((z) =>
+              z.id === zoneDragState.zoneId ? { ...z, center: newCenter } : z
+            ),
+          }), false);
+        } else if (zoneDragState.mode === 'area_corner' && zoneDragState.initialDimensions) {
+          const newW = Math.max(0.6, Number((zoneDragState.initialDimensions.width + dx).toFixed(2)));
+          const newH = Math.max(0.6, Number((zoneDragState.initialDimensions.height + dy).toFixed(2)));
+          onUpdateFloor((prev) => ({
+            ...prev,
+            installationZones: prev.installationZones?.map((z) =>
+              z.id === zoneDragState.zoneId
+                ? { ...z, dimensions: { width: newW, height: newH }, widthMeters: newW }
+                : z
+            ),
+          }), false);
+        }
+      }
+      return;
+    }
+
+    // Handle interactive zone drawing along wall
+    if (zoneDrawState) {
+      const targetWall = floor.walls.find((w) => w.id === zoneDrawState.wallId);
+      if (targetWall) {
+        const wdx = targetWall.end.x - targetWall.start.x;
+        const wdy = targetWall.end.y - targetWall.start.y;
+        const wLen = Math.hypot(wdx, wdy);
+        if (wLen > 0.01) {
+          const ux = wdx / wLen;
+          const uy = wdy / wLen;
+          const proj = (worldPt.x - targetWall.start.x) * ux + (worldPt.y - targetWall.start.y) * uy;
+          const clamped = Math.max(0, Math.min(wLen, Number(proj.toFixed(2))));
+          setZoneDrawState((prev) => (prev ? { ...prev, currentDist: clamped } : null));
+        }
+      }
+      return;
+    }
+
     // 0. Handle calibration endpoint dragging (sub-millimeter precision, no grid snap)
     if (activeCalibHandleDrag) {
       if (activeCalibHandleDrag === 'start') {
@@ -1253,6 +1446,54 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
       }
       setWallDragState(null);
       setSnappedAngleInfo(null);
+    }
+    if (zoneDragState) {
+      if (zoneDragState.hasMoved) {
+        onUpdateFloor((prev) => ({ ...prev }), true);
+      }
+      setZoneDragState(null);
+    }
+    if (zoneDrawState) {
+      const targetWall = floor.walls.find((w) => w.id === zoneDrawState.wallId);
+      if (targetWall) {
+        const wdx = targetWall.end.x - targetWall.start.x;
+        const wdy = targetWall.end.y - targetWall.start.y;
+        const wLen = Math.hypot(wdx, wdy);
+        const s = Math.min(zoneDrawState.startDist, zoneDrawState.currentDist);
+        const e = Math.max(zoneDrawState.startDist, zoneDrawState.currentDist);
+        let len = Number((e - s).toFixed(2));
+        let finalStart = s;
+        if (len < 0.2) {
+          if (zoneDrawState.type === 'zvs') {
+            len = Math.min(2.4, Number((wLen - finalStart).toFixed(2)));
+            if (len < 1.0) {
+              finalStart = Math.max(0, wLen - 2.4);
+              len = Math.min(2.4, wLen);
+            }
+          } else if (zoneDrawState.type === 'zvz') {
+            len = 0.20;
+          } else {
+            len = Math.min(1.5, Number((wLen - finalStart).toFixed(2)));
+          }
+        }
+
+        const newZones = addWallZoneSegment(
+          zoneDrawState.wallId,
+          finalStart,
+          len,
+          zoneDrawState.type,
+          floor
+        );
+        const createdZone = newZones[newZones.length - 1];
+        onUpdateFloor((prev) => ({
+          ...prev,
+          installationZones: newZones,
+        }), true);
+        if (createdZone) {
+          setEffectiveSelectedZoneId(createdZone.id);
+        }
+      }
+      setZoneDrawState(null);
     }
   };
 
@@ -1472,16 +1713,37 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         )}
       </div>
 
-      {/* Step 3 Guidance Pill */}
+      {/* Step 3: Interactive In-Canvas STN Guidance Bar */}
       {currentStep === 3 && (
         <div
-          className="absolute top-16 left-4 z-20 flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-teal-500/40 text-xs text-teal-200 shadow-xl no-canvas-click"
+          className="absolute top-16 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-slate-900/95 backdrop-blur-md px-4 py-2 rounded-2xl border border-teal-500/50 shadow-2xl text-xs text-slate-200 no-canvas-click select-none"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
-          <span>
-            <strong>Krok 3: Inštalačné zóny STN 33 2130</strong> – Zóny ZVD (dolná), ZVH (horná) a ZVZ (dvere) sú aktívne.
+          <div className="flex items-center gap-2 border-r border-slate-800 pr-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse"></span>
+            <span className="font-bold text-teal-300">STN 33 2130 Zóny:</span>
+          </div>
+
+          <span className="text-slate-300">
+            {activeTool === 'select'
+              ? '💡 Kliknite na zónu pre úpravu. Potiahnutím za stred zónu presuniete, za modré okraje zmeníte rozmer.'
+              : activeTool === 'zone_kitchen'
+              ? '💡 Kliknite a ťahajte po stene pre vyznačenie linky len na požadovanom úseku (napr. 2.4 m).'
+              : activeTool === 'zone_segment'
+              ? '💡 Kliknite a ťahajte po stene pre vymedzenie úseku zóny.'
+              : 'Zakreslite inštalačné zóny podľa normy STN.'}
           </span>
+
+          {onOpenZoneGuide && (
+            <button
+              onClick={onOpenZoneGuide}
+              className="ml-2 px-2.5 py-1 bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/50 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 shrink-0"
+              title="Otvoriť podrobného sprievodcu normou STN 33 2130 a návod ako umiestňovať zóny"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Návod STN</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -1969,243 +2231,415 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         {/* 1.5 INSTALLATION ZONES (STN 33 2130 & STN 33 2000-7-701) */}
         {(showZones || currentStep === 3) && (
           <g id="stn-installation-zones-layer">
-            {/* A. Wall-based Installation Zones (ZVD, ZVH, ZVS, ZVZ, ZVR) */}
-            {floor.walls.map((wall) => {
-              const dx = wall.end.x - wall.start.x;
-              const dy = wall.end.y - wall.start.y;
-              const len = Math.hypot(dx, dy);
-              if (len < 0.2) return null;
+            {/* A. Wall-based Installation Zones (Rendered per zone with individual sub-segment dimensions) */}
+            {floor.installationZones
+              ?.filter((z) => z.wallId)
+              .map((zone) => {
+                const wall = floor.walls.find((w) => w.id === zone.wallId);
+                if (!wall) return null;
+                const dx = wall.end.x - wall.start.x;
+                const dy = wall.end.y - wall.start.y;
+                const wallLen = Math.hypot(dx, dy);
+                if (wallLen < 0.2) return null;
 
-              const ux = dx / len;
-              const uy = dy / len;
-              const nx = -uy;
-              const ny = ux;
+                const ux = dx / wallLen;
+                const uy = dy / wallLen;
+                const nx = -uy;
+                const ny = ux;
 
-              const hT = (wall.thickness || defaultWallThickness || 0.15) / 2;
-              const zWidth = 0.30; // 30 cm STN zone width
-              const isKitchenWall = floor.installationZones?.some(
-                (z) => z.wallId === wall.id && z.type === 'zvs'
-              );
+                const hT = (wall.thickness || defaultWallThickness || 0.15) / 2;
+                const zWidth = zone.widthMeters || 0.30;
+                const sDist = Math.max(0, Math.min(wallLen - 0.1, zone.distanceFromStartMeters ?? 0));
+                const zLen = Math.max(0.1, Math.min(wallLen - sDist, zone.lengthMeters ?? (wallLen - sDist)));
+                const eDist = sDist + zLen;
+                const midDist = (sDist + eDist) / 2;
 
-              // 2D Coordinates for Left & Right zone strips (parallel to wall)
-              const p1Lx = (wall.start.x + nx * hT) * scale;
-              const p1Ly = (wall.start.y + ny * hT) * scale;
-              const p2Lx = (wall.end.x + nx * hT) * scale;
-              const p2Ly = (wall.end.y + ny * hT) * scale;
-              const p3Lx = (wall.end.x + nx * (hT + zWidth)) * scale;
-              const p3Ly = (wall.end.y + ny * (hT + zWidth)) * scale;
-              const p4Lx = (wall.start.x + nx * (hT + zWidth)) * scale;
-              const p4Ly = (wall.start.y + ny * (hT + zWidth)) * scale;
+                const isSelected = zone.id === activeSelectedZoneId;
+                const isKitchen = zone.type === 'zvs';
+                const isVertical = zone.type === 'zvz' || zone.type === 'zvr';
 
-              const p1Rx = (wall.start.x - nx * hT) * scale;
-              const p1Ry = (wall.start.y - ny * hT) * scale;
-              const p2Rx = (wall.end.x - nx * hT) * scale;
-              const p2Ry = (wall.end.y - ny * hT) * scale;
-              const p3Rx = (wall.end.x - nx * (hT + zWidth)) * scale;
-              const p3Ry = (wall.end.y - ny * (hT + zWidth)) * scale;
-              const p4Rx = (wall.start.x - nx * (hT + zWidth)) * scale;
-              const p4Ry = (wall.start.y - ny * (hT + zWidth)) * scale;
+                const zoneColor = zone.color || (isKitchen ? '#f59e0b' : isVertical ? '#34d399' : '#38bdf8');
+                const fillColor = isKitchen
+                  ? 'rgba(245, 158, 11, 0.22)'
+                  : isVertical
+                  ? 'rgba(52, 211, 153, 0.22)'
+                  : 'rgba(56, 189, 248, 0.18)';
 
-              const midX = ((wall.start.x + wall.end.x) / 2) * scale;
-              const midY = ((wall.start.y + wall.end.y) / 2) * scale;
-              const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+                // Segment points on wall axis
+                const sPt = { x: wall.start.x + ux * sDist, y: wall.start.y + uy * sDist };
+                const ePt = { x: wall.start.x + ux * eDist, y: wall.start.y + uy * eDist };
+                const midPt = { x: wall.start.x + ux * midDist, y: wall.start.y + uy * midDist };
 
-              return (
-                <g key={`wall-zones-${wall.id}`}>
-                  {/* Left Side Horizontal Zone Strip */}
-                  <polygon
-                    points={`${p1Lx},${p1Ly} ${p2Lx},${p2Ly} ${p3Lx},${p3Ly} ${p4Lx},${p4Ly}`}
-                    fill={isKitchenWall ? 'rgba(245, 158, 11, 0.12)' : 'rgba(45, 212, 191, 0.08)'}
-                    stroke={isKitchenWall ? 'rgba(245, 158, 11, 0.6)' : 'rgba(45, 212, 191, 0.4)'}
-                    strokeWidth="1"
-                    strokeDasharray="3 3"
-                  />
+                const side = zone.side || 'both';
+                const showLeft = side === 'both' || side === 'left';
+                const showRight = side === 'both' || side === 'right';
 
-                  {/* Right Side Horizontal Zone Strip */}
-                  <polygon
-                    points={`${p1Rx},${p1Ry} ${p2Rx},${p2Ry} ${p3Rx},${p3Ry} ${p4Rx},${p4Ry}`}
-                    fill={isKitchenWall ? 'rgba(245, 158, 11, 0.12)' : 'rgba(45, 212, 191, 0.08)'}
-                    stroke={isKitchenWall ? 'rgba(245, 158, 11, 0.6)' : 'rgba(45, 212, 191, 0.4)'}
-                    strokeWidth="1"
-                    strokeDasharray="3 3"
-                  />
+                // Left polygon (in pixels)
+                const p1Lx = (sPt.x + nx * hT) * scale;
+                const p1Ly = (sPt.y + ny * hT) * scale;
+                const p2Lx = (ePt.x + nx * hT) * scale;
+                const p2Ly = (ePt.y + ny * hT) * scale;
+                const p3Lx = (ePt.x + nx * (hT + zWidth)) * scale;
+                const p3Ly = (ePt.y + ny * (hT + zWidth)) * scale;
+                const p4Lx = (sPt.x + nx * (hT + zWidth)) * scale;
+                const p4Ly = (sPt.y + ny * (hT + zWidth)) * scale;
 
-                  {/* Zone Label Badge along Wall */}
-                  {len >= 1.2 && (
-                    <g transform={`translate(${midX}, ${midY}) rotate(${angleDeg > 90 || angleDeg < -90 ? angleDeg + 180 : angleDeg})`}>
+                // Right polygon (in pixels)
+                const p1Rx = (sPt.x - nx * hT) * scale;
+                const p1Ry = (sPt.y - ny * hT) * scale;
+                const p2Rx = (ePt.x - nx * hT) * scale;
+                const p2Ry = (ePt.y - ny * hT) * scale;
+                const p3Rx = (ePt.x - nx * (hT + zWidth)) * scale;
+                const p3Ry = (ePt.y - ny * (hT + zWidth)) * scale;
+                const p4Rx = (sPt.x - nx * (hT + zWidth)) * scale;
+                const p4Ry = (sPt.y - ny * (hT + zWidth)) * scale;
+
+                const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+                return (
+                  <g
+                    key={`inst-zone-${zone.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEffectiveSelectedZoneId(zone.id);
+                      onSelectWall(undefined);
+                      onSelectComponent(undefined);
+                      if (onSelectOpening) onSelectOpening(undefined);
+                    }}
+                    className="cursor-pointer"
+                  >
+                    {/* Left Strip */}
+                    {showLeft && (
+                      <polygon
+                        points={`${p1Lx},${p1Ly} ${p2Lx},${p2Ly} ${p3Lx},${p3Ly} ${p4Lx},${p4Ly}`}
+                        fill={fillColor}
+                        stroke={isSelected ? '#38bdf8' : zoneColor}
+                        strokeWidth={isSelected ? 2.5 : 1}
+                        strokeDasharray={isSelected ? 'none' : '4 3'}
+                        className="transition-colors hover:opacity-90"
+                      />
+                    )}
+
+                    {/* Right Strip */}
+                    {showRight && (
+                      <polygon
+                        points={`${p1Rx},${p1Ry} ${p2Rx},${p2Ry} ${p3Rx},${p3Ry} ${p4Rx},${p4Ry}`}
+                        fill={fillColor}
+                        stroke={isSelected ? '#38bdf8' : zoneColor}
+                        strokeWidth={isSelected ? 2.5 : 1}
+                        strokeDasharray={isSelected ? 'none' : '4 3'}
+                        className="transition-colors hover:opacity-90"
+                      />
+                    )}
+
+                    {/* Label Badge on Zone */}
+                    <g
+                      transform={`translate(${midPt.x * scale}, ${midPt.y * scale}) rotate(${
+                        angleDeg > 90 || angleDeg < -90 ? angleDeg + 180 : angleDeg
+                      })`}
+                    >
                       <rect
-                        x="-48"
+                        x="-45"
                         y={-hT * scale - 14}
-                        width="96"
-                        height="12"
-                        rx="3"
-                        fill={isKitchenWall ? 'rgba(245, 158, 11, 0.85)' : 'rgba(15, 23, 42, 0.85)'}
-                        stroke={isKitchenWall ? '#f59e0b' : 'rgba(45, 212, 191, 0.6)'}
+                        width="90"
+                        height="13"
+                        rx="3.5"
+                        fill={isSelected ? '#0284c7' : isKitchen ? 'rgba(245, 158, 11, 0.9)' : 'rgba(15, 23, 42, 0.88)'}
+                        stroke={zoneColor}
                         strokeWidth="0.8"
                       />
                       <text
                         x="0"
                         y={-hT * scale - 5}
-                        fill={isKitchenWall ? '#020617' : '#2dd4bf'}
+                        fill={isSelected ? '#ffffff' : isKitchen ? '#020617' : zoneColor}
                         fontSize="8"
                         fontWeight="bold"
                         textAnchor="middle"
                         fontFamily="monospace"
                       >
-                        {isKitchenWall ? 'ZVS (115cm linka)' : 'ZVD / ZVH (30cm)'}
+                        {isKitchen ? `ZVS Linka ${zLen.toFixed(1)}m` : `${zone.type.toUpperCase()} ${zLen.toFixed(1)}m`}
                       </text>
                     </g>
-                  )}
 
-                  {/* Vertical Zones at Door Openings (ZVZ - 10 to 30 cm from door frame) */}
-                  {wall.openings?.filter((op) => op.type === 'door').map((op) => {
-                    const doorDist = op.positionRatio * len;
-                    const halfW = op.width / 2;
-
-                    // Left door zone
-                    const lDist = Math.max(0.05, doorDist - halfW - 0.20);
-                    const lCenter = { x: wall.start.x + ux * lDist, y: wall.start.y + uy * lDist };
-
-                    // Right door zone
-                    const rDist = Math.min(len - 0.25, doorDist + halfW + 0.20);
-                    const rCenter = { x: wall.start.x + ux * rDist, y: wall.start.y + uy * rDist };
-
-                    return (
-                      <g key={`door-zones-${op.id}`}>
-                        {/* Left ZVZ */}
-                        <circle
-                          cx={lCenter.x * scale}
-                          cy={lCenter.y * scale}
-                          r={10}
-                          fill="rgba(52, 211, 153, 0.25)"
-                          stroke="#34d399"
-                          strokeWidth="1.2"
-                          strokeDasharray="2 2"
-                        />
-                        <text
-                          x={lCenter.x * scale}
-                          y={lCenter.y * scale - 12}
-                          fill="#34d399"
-                          fontSize="8"
-                          fontWeight="bold"
-                          textAnchor="middle"
+                    {/* Interactive Drag & Resize Handles when Selected */}
+                    {isSelected && (
+                      <g className="zone-handles select-none">
+                        {/* 1. Center Move Handle / Badge */}
+                        <g
+                          transform={`translate(${midPt.x * scale}, ${midPt.y * scale}) rotate(${
+                            angleDeg > 90 || angleDeg < -90 ? angleDeg + 180 : angleDeg
+                          })`}
+                          className="cursor-move"
+                          onMouseDown={(e) => handleStartZoneDrag(zone, 'move', e)}
                         >
-                          ZVZ (vypínače)
-                        </text>
+                          <rect
+                            x="-58"
+                            y={hT * scale + 4}
+                            width="116"
+                            height="18"
+                            rx="5"
+                            fill="#0284c7"
+                            stroke="#ffffff"
+                            strokeWidth="1.2"
+                            filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))"
+                          />
+                          <text
+                            x="0"
+                            y={hT * scale + 16}
+                            fill="#ffffff"
+                            fontSize="9"
+                            fontWeight="bold"
+                            textAnchor="middle"
+                          >
+                            ✥ Posunúť: {zLen.toFixed(2)}m (od {sDist.toFixed(2)}m)
+                          </text>
+                        </g>
 
-                        {/* Right ZVZ */}
-                        <circle
-                          cx={rCenter.x * scale}
-                          cy={rCenter.y * scale}
-                          r={10}
-                          fill="rgba(52, 211, 153, 0.25)"
-                          stroke="#34d399"
-                          strokeWidth="1.2"
-                          strokeDasharray="2 2"
-                        />
-                        <text
-                          x={rCenter.x * scale}
-                          y={rCenter.y * scale - 12}
-                          fill="#34d399"
-                          fontSize="8"
-                          fontWeight="bold"
-                          textAnchor="middle"
+                        {/* 2. Start Resize Handle */}
+                        <g
+                          transform={`translate(${sPt.x * scale}, ${sPt.y * scale})`}
+                          className="cursor-ew-resize"
+                          onMouseDown={(e) => handleStartZoneDrag(zone, 'start', e)}
                         >
-                          ZVZ (vypínače)
-                        </text>
+                          <title>Potiahnite pre zmenu začiatku a rozmeru zóny</title>
+                          <circle r="9" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.4))" />
+                          <circle r="3.5" fill="#ffffff" />
+                        </g>
+
+                        {/* 3. End Resize Handle */}
+                        <g
+                          transform={`translate(${ePt.x * scale}, ${ePt.y * scale})`}
+                          className="cursor-ew-resize"
+                          onMouseDown={(e) => handleStartZoneDrag(zone, 'end', e)}
+                        >
+                          <title>Potiahnite pre zmenu dĺžky zóny</title>
+                          <circle r="9" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.4))" />
+                          <circle r="3.5" fill="#ffffff" />
+                        </g>
                       </g>
-                    );
-                  })}
+                    )}
+                  </g>
+                );
+              })}
+
+            {/* Ghost guidelines for walls with no zones yet during Step 3 */}
+            {currentStep === 3 &&
+              floor.walls.map((wall) => {
+                const hasZone = floor.installationZones?.some((z) => z.wallId === wall.id);
+                if (hasZone) return null;
+                const dx = wall.end.x - wall.start.x;
+                const dy = wall.end.y - wall.start.y;
+                const len = Math.hypot(dx, dy);
+                if (len < 0.2) return null;
+                const ux = dx / len;
+                const uy = dy / len;
+                const nx = -uy;
+                const ny = ux;
+                const hT = (wall.thickness || defaultWallThickness || 0.15) / 2;
+                const zWidth = 0.30;
+
+                const p1Lx = (wall.start.x + nx * (hT + zWidth / 2)) * scale;
+                const p1Ly = (wall.start.y + ny * (hT + zWidth / 2)) * scale;
+                const p2Lx = (wall.end.x + nx * (hT + zWidth / 2)) * scale;
+                const p2Ly = (wall.end.y + ny * (hT + zWidth / 2)) * scale;
+
+                return (
+                  <g key={`wall-ghost-${wall.id}`} className="pointer-events-none opacity-30">
+                    <line
+                      x1={p1Lx}
+                      y1={p1Ly}
+                      x2={p2Lx}
+                      y2={p2Ly}
+                      stroke="#2dd4bf"
+                      strokeWidth="1"
+                      strokeDasharray="4 6"
+                    />
+                  </g>
+                );
+              })}
+
+            {/* Live preview for zone segment drawing in progress */}
+            {zoneDrawState && (() => {
+              const wall = floor.walls.find((w) => w.id === zoneDrawState.wallId);
+              if (!wall) return null;
+              const dx = wall.end.x - wall.start.x;
+              const dy = wall.end.y - wall.start.y;
+              const wallLen = Math.hypot(dx, dy);
+              if (wallLen < 0.1) return null;
+              const ux = dx / wallLen;
+              const uy = dy / wallLen;
+              const nx = -uy;
+              const ny = ux;
+              const hT = (wall.thickness || defaultWallThickness || 0.15) / 2;
+              const zWidth = 0.30;
+              const sDist = Math.min(zoneDrawState.startDist, zoneDrawState.currentDist);
+              const eDist = Math.max(zoneDrawState.startDist, zoneDrawState.currentDist);
+              const drawnLen = Math.abs(eDist - sDist);
+
+              const sPt = { x: wall.start.x + ux * sDist, y: wall.start.y + uy * sDist };
+              const ePt = { x: wall.start.x + ux * eDist, y: wall.start.y + uy * eDist };
+              const midPt = { x: (sPt.x + ePt.x) / 2, y: (sPt.y + ePt.y) / 2 };
+
+              const p1Lx = (sPt.x + nx * hT) * scale;
+              const p1Ly = (sPt.y + ny * hT) * scale;
+              const p2Lx = (ePt.x + nx * hT) * scale;
+              const p2Ly = (ePt.y + ny * hT) * scale;
+              const p3Lx = (ePt.x + nx * (hT + zWidth)) * scale;
+              const p3Ly = (ePt.y + ny * (hT + zWidth)) * scale;
+              const p4Lx = (sPt.x + nx * (hT + zWidth)) * scale;
+              const p4Ly = (sPt.y + ny * (hT + zWidth)) * scale;
+
+              return (
+                <g className="pointer-events-none">
+                  <polygon
+                    points={`${p1Lx},${p1Ly} ${p2Lx},${p2Ly} ${p3Lx},${p3Ly} ${p4Lx},${p4Ly}`}
+                    fill="rgba(245, 158, 11, 0.35)"
+                    stroke="#f59e0b"
+                    strokeWidth="2"
+                    strokeDasharray="4 4"
+                  />
+                  {/* Floating Dimension Tag */}
+                  <g transform={`translate(${midPt.x * scale}, ${midPt.y * scale - 25})`}>
+                    <rect
+                      x="-70"
+                      y="-12"
+                      width="140"
+                      height="24"
+                      rx="6"
+                      fill="rgba(15, 23, 42, 0.95)"
+                      stroke="#f59e0b"
+                      strokeWidth="1.2"
+                    />
+                    <text x="0" y="4" fill="#fbbf24" fontSize="10" fontWeight="bold" textAnchor="middle">
+                      {zoneDrawState.type === 'zvs' ? '🍳 Linka' : 'Úsek'}: {drawnLen.toFixed(2)} m (od {sDist.toFixed(2)} m)
+                    </text>
+                  </g>
                 </g>
               );
-            })}
+            })()}
 
             {/* B. Room-based and Custom Installation Zones (Bathrooms, Corridors) */}
-            {floor.installationZones?.map((zone) => {
-              const isSelected = zone.id === selectedZoneId;
+            {floor.installationZones
+              ?.filter((z) => !z.wallId)
+              .map((zone) => {
+                const isSelected = zone.id === activeSelectedZoneId;
 
-              // Bathroom Safety Zone
-              if (zone.type === 'bathroom' && zone.center && zone.dimensions) {
-                const isZone01 = zone.subType === '0';
-                const rx = (zone.center.x - zone.dimensions.width / 2) * scale;
-                const ry = (zone.center.y - zone.dimensions.height / 2) * scale;
-                const rw = zone.dimensions.width * scale;
-                const rh = zone.dimensions.height * scale;
+                // Bathroom Safety Zone
+                if (zone.type === 'bathroom' && zone.center && zone.dimensions) {
+                  const isZone01 = zone.subType === '0';
+                  const rx = (zone.center.x - zone.dimensions.width / 2) * scale;
+                  const ry = (zone.center.y - zone.dimensions.height / 2) * scale;
+                  const rw = zone.dimensions.width * scale;
+                  const rh = zone.dimensions.height * scale;
 
-                return (
-                  <g
-                    key={zone.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedZoneId(zone.id);
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <rect
-                      x={rx}
-                      y={ry}
-                      width={rw}
-                      height={rh}
-                      fill={isZone01 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.12)'}
-                      stroke={isSelected ? '#38bdf8' : isZone01 ? '#ef4444' : '#f59e0b'}
-                      strokeWidth={isSelected ? 2.5 : 1.5}
-                      strokeDasharray={isZone01 ? '4 4' : '6 3'}
-                      rx={6}
-                    />
-                    <text
-                      x={zone.center.x * scale}
-                      y={isZone01 ? zone.center.y * scale : ry + 12}
-                      fill={isZone01 ? '#f87171' : '#fbbf24'}
-                      fontSize="9"
-                      fontWeight="bold"
-                      textAnchor="middle"
+                  return (
+                    <g
+                      key={zone.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEffectiveSelectedZoneId(zone.id);
+                        onSelectWall(undefined);
+                        onSelectComponent(undefined);
+                        if (onSelectOpening) onSelectOpening(undefined);
+                      }}
+                      className="cursor-pointer"
                     >
-                      {isZone01 ? 'Vaňa / Sprcha: Zóna 0 & 1 (ZÁKAZ 230V)' : 'Zóna 2 (Ochranný pás 60cm, min. IPX4)'}
-                    </text>
-                  </g>
-                );
-              }
+                      <rect
+                        x={rx}
+                        y={ry}
+                        width={rw}
+                        height={rh}
+                        fill={isZone01 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.12)'}
+                        stroke={isSelected ? '#38bdf8' : isZone01 ? '#ef4444' : '#f59e0b'}
+                        strokeWidth={isSelected ? 2.5 : 1.5}
+                        strokeDasharray={isZone01 ? '4 4' : '6 3'}
+                        rx={6}
+                      />
+                      <text
+                        x={zone.center.x * scale}
+                        y={isZone01 ? zone.center.y * scale : ry + 12}
+                        fill={isZone01 ? '#f87171' : '#fbbf24'}
+                        fontSize="9"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        {isZone01 ? 'Vaňa / Sprcha: Zóna 0 & 1 (ZÁKAZ 230V)' : 'Zóna 2 (Ochranný pás 60cm, min. IPX4)'}
+                      </text>
 
-              // Ceiling Corridor (SDK)
-              if (zone.type === 'ceiling' && zone.polygon && zone.polygon.length >= 2) {
-                const [pStart, pEnd] = zone.polygon;
-                const cWidth = (zone.widthMeters || 0.4) * scale;
+                      {/* Interactive Handles when Selected */}
+                      {isSelected && (
+                        <g className="select-none">
+                          {/* Center Move Handle */}
+                          <g
+                            transform={`translate(${zone.center.x * scale}, ${zone.center.y * scale})`}
+                            className="cursor-move"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_center', e)}
+                          >
+                            <title>Potiahnite pre presunutie vane/sprchy</title>
+                            <circle r="12" fill="#ef4444" stroke="#ffffff" strokeWidth="2" opacity="0.9" />
+                            <text x="0" y="3.5" fill="#ffffff" fontSize="10" fontWeight="bold" textAnchor="middle">
+                              ✥
+                            </text>
+                          </g>
 
-                return (
-                  <g
-                    key={zone.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedZoneId(zone.id);
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <line
-                      x1={pStart.x * scale}
-                      y1={pStart.y * scale}
-                      x2={pEnd.x * scale}
-                      y2={pEnd.y * scale}
-                      stroke={isSelected ? '#38bdf8' : 'rgba(251, 191, 36, 0.5)'}
-                      strokeWidth={cWidth}
-                      strokeDasharray="8 6"
-                      strokeLinecap="round"
-                    />
-                    <text
-                      x={((pStart.x + pEnd.x) / 2) * scale}
-                      y={((pStart.y + pEnd.y) / 2) * scale - cWidth / 2 - 4}
-                      fill="#fbbf24"
-                      fontSize="9"
-                      fontWeight="bold"
-                      textAnchor="middle"
+                          {/* Corner Resize Handle */}
+                          <g
+                            transform={`translate(${rx + rw}, ${ry + rh})`}
+                            className="cursor-nwse-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e)}
+                          >
+                            <title>Potiahnite pre zmenu rozmeru vane/sprchy</title>
+                            <circle r="8" fill="#38bdf8" stroke="#ffffff" strokeWidth="2" />
+                          </g>
+                        </g>
+                      )}
+                    </g>
+                  );
+                }
+
+                // Ceiling Corridor (SDK)
+                if (zone.type === 'ceiling' && zone.polygon && zone.polygon.length >= 2) {
+                  const [pStart, pEnd] = zone.polygon;
+                  const cWidth = (zone.widthMeters || 0.4) * scale;
+
+                  return (
+                    <g
+                      key={zone.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEffectiveSelectedZoneId(zone.id);
+                        onSelectWall(undefined);
+                        onSelectComponent(undefined);
+                        if (onSelectOpening) onSelectOpening(undefined);
+                      }}
+                      className="cursor-pointer"
                     >
-                      {zone.name}
-                    </text>
-                  </g>
-                );
-              }
+                      <line
+                        x1={pStart.x * scale}
+                        y1={pStart.y * scale}
+                        x2={pEnd.x * scale}
+                        y2={pEnd.y * scale}
+                        stroke={isSelected ? '#38bdf8' : 'rgba(251, 191, 36, 0.5)'}
+                        strokeWidth={cWidth}
+                        strokeDasharray="8 6"
+                        strokeLinecap="round"
+                      />
+                      <text
+                        x={((pStart.x + pEnd.x) / 2) * scale}
+                        y={((pStart.y + pEnd.y) / 2) * scale - cWidth / 2 - 4}
+                        fill="#fbbf24"
+                        fontSize="9"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        {zone.name}
+                      </text>
+                    </g>
+                  );
+                }
 
-              return null;
-            })}
+                return null;
+              })}
 
             {/* C. Live drawing preview for Ceiling Corridor in progress */}
             {activeTool === 'zone_ceiling' && ceilingZoneStart && (

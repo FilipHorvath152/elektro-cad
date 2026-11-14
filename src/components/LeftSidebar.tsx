@@ -24,6 +24,7 @@ import {
   Sparkles,
   Columns,
   Maximize2,
+  BookOpen,
 } from 'lucide-react';
 
 interface LeftSidebarProps {
@@ -49,6 +50,7 @@ interface LeftSidebarProps {
   onGenerateZones?: () => void;
   onClearZones?: () => void;
   zoneCount?: number;
+  onOpenZoneGuide?: () => void;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({
@@ -74,6 +76,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onGenerateZones,
   onClearZones,
   zoneCount = 0,
+  onOpenZoneGuide,
 }) => {
   const handleComponentPick = (type: ElectricalComponentType) => {
     onSelectTool('component');
@@ -456,11 +459,22 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
             </span>
           </div>
 
+          {/* Sprievodca a návod na zóny */}
+          {onOpenZoneGuide && (
+            <button
+              onClick={onOpenZoneGuide}
+              className="w-full p-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-md shadow-teal-600/20 transition active:scale-95"
+            >
+              <BookOpen className="w-4 h-4 text-teal-200" />
+              <span>Návod: Ako umiestniť zóny</span>
+            </button>
+          )}
+
           {/* Generovanie normových zón STN */}
           {onGenerateZones && (
             <button
               onClick={onGenerateZones}
-              className="w-full p-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-sky-600 hover:from-teal-400 hover:to-sky-500 text-white shadow-lg shadow-teal-500/20 transition"
+              className="w-full p-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white shadow-lg shadow-sky-600/20 transition"
             >
               <Sparkles className="w-4 h-4 text-amber-300" />
               <span>Vygenerovať zóny STN 33 2130</span>
@@ -484,7 +498,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           >
             <span className="flex items-center gap-2">
               <MousePointer className="w-4 h-4 text-sky-400" />
-              Označiť / Prezerať zóny
+              Označiť / Presúvať / Meniť rozmer
             </span>
             <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded font-mono">
               Výber
@@ -492,7 +506,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
           </button>
 
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mt-1">
-            Manuálne kreslenie zón:
+            Kreslenie na stenu (ťahaním):
           </div>
 
           {/* Nástroje manuálneho zakreslenia zón */}
@@ -508,12 +522,32 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
               <div className="flex items-center gap-2">
                 <Ruler className="w-4 h-4 text-amber-400" />
                 <div className="flex flex-col text-left">
-                  <span>ZVS – Kuchynská linka</span>
-                  <span className="text-[9px] font-normal text-slate-400">Vodorovná 90–120 cm (os 115cm)</span>
+                  <span>ZVS – Kuchynská linka (plocha)</span>
+                  <span className="text-[9px] font-normal text-slate-400">90–120 cm (os 115cm) – ťahaním po stene</span>
                 </div>
               </div>
               <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-800/80 rounded">
-                + Stena
+                + Linka
+              </span>
+            </button>
+
+            <button
+              onClick={() => onSelectTool('zone_segment')}
+              className={`w-full p-2 rounded-xl font-bold text-xs flex items-center justify-between transition border ${
+                activeTool === 'zone_segment'
+                  ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-md shadow-teal-500/20'
+                  : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Maximize2 className="w-4 h-4 text-teal-400" />
+                <div className="flex flex-col text-left">
+                  <span>Vymedziť úsek na stene</span>
+                  <span className="text-[9px] font-normal text-slate-400">Vytvoriť zónu len na časť steny</span>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-800/80 rounded">
+                + Úsek
               </span>
             </button>
 
