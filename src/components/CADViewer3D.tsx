@@ -745,6 +745,53 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
       }
     });
 
+    // 8b. 3D Kúpeľňové bezpečnostné zóny (STN 33 2000-7-701)
+    // Zóna 2 (ochranný pás 60 cm) je pevne naviazaná na vaňu/sprchu (Zóna 0 & 1)!
+    floor.installationZones?.forEach((zone) => {
+      if (zone.type === 'bathroom' && zone.center && zone.dimensions && zone.subType !== '2') {
+        const bw = zone.dimensions.width;
+        const bh = zone.dimensions.height;
+        const bElev = zone.elevationTopMeters || 2.25;
+
+        // 1. Zóna 0 & 1 (Vaňa / Sprchový kút) - Červený bezpečnostný objem s prísnym zákazom 230V
+        const tubGeo = new THREE.BoxGeometry(bw, bElev, bh);
+        const tubMat = new THREE.MeshBasicMaterial({
+          color: 0xef4444,
+          transparent: true,
+          opacity: 0.16,
+        });
+        const tubMesh = new THREE.Mesh(tubGeo, tubMat);
+        tubMesh.position.set(zone.center.x, bElev / 2, zone.center.y);
+        scene.add(tubMesh);
+
+        // Fyzická vaňa / sprchová vanička na podlahe (biela keramika, výška 50 cm)
+        const tubBodyGeo = new THREE.BoxGeometry(bw, 0.48, bh);
+        const tubBodyMat = new THREE.MeshStandardMaterial({
+          color: 0xf8fafc,
+          roughness: 0.2,
+          metalness: 0.05,
+        });
+        const tubBody = new THREE.Mesh(tubBodyGeo, tubBodyMat);
+        tubBody.position.set(zone.center.x, 0.24, zone.center.y);
+        tubBody.castShadow = true;
+        tubBody.receiveShadow = true;
+        scene.add(tubBody);
+
+        // 2. Zóna 2 (Ochranný pás 60 cm naviazaný na vaňu/sprchu) - Jantárový bezpečnostný obal
+        const z2w = bw + 1.20;
+        const z2h = bh + 1.20;
+        const z2Geo = new THREE.BoxGeometry(z2w, bElev, z2h);
+        const z2Mat = new THREE.MeshBasicMaterial({
+          color: 0xf59e0b,
+          transparent: true,
+          opacity: 0.07,
+        });
+        const z2Mesh = new THREE.Mesh(z2Geo, z2Mat);
+        z2Mesh.position.set(zone.center.x, bElev / 2, zone.center.y);
+        scene.add(z2Mesh);
+      }
+    });
+
     // 9. CAD & SOLIDWORKS 3D CONTROLS:
     // - Pravé tlačidlo (RMB) = Posun stredu pohľadu (Pan camera target)
     // - Ľavé tlačidlo (LMB) / Stredné (MMB) = Otáčanie okolo stredu (Orbit)

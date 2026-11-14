@@ -15,6 +15,7 @@ import {
   Sparkles,
   Info,
   ArrowLeftRight,
+  Lock,
 } from 'lucide-react';
 import { InstallationZone, InstallationZoneType, Wall } from '../types/cad';
 
@@ -373,67 +374,160 @@ export const ZonePropertiesPanel: React.FC<ZonePropertiesPanelProps> = ({
           </div>
         )}
 
-        {/* Area / Bathroom Controls */}
+        {/* Kúpeľňové bezpečnostné zóny (STN 33 2000-7-701) */}
         {isBathroom && zone.dimensions && (
-          <div className="bg-slate-950/70 p-3 rounded-xl border border-red-500/30 space-y-3">
-            <span className="font-bold text-red-300 text-xs block">Rozmery vane / sprchy (Zóna 0 & 1):</span>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Dĺžka (m):</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={zone.dimensions.width}
-                  onChange={(e) => {
-                    const w = parseFloat(e.target.value) || 1.6;
-                    onUpdateZone({
-                      ...zone,
-                      dimensions: { ...zone.dimensions!, width: w },
-                      widthMeters: w,
-                    });
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
-                />
+          <div className="space-y-3">
+            {/* 1. Vaňa / Sprchový kút (Zóna 0 & 1) */}
+            <div className="bg-slate-950/70 p-3 rounded-xl border border-red-500/30 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-red-300 text-xs flex items-center gap-1.5">
+                  <Droplets className="w-3.5 h-3.5 text-red-400" />
+                  Rozmery vane / sprchy (Zóna 0 & 1)
+                </span>
+                <span className="text-[10px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded font-mono border border-red-800">
+                  ZÁKAZ 230V
+                </span>
               </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Šírka (m):</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={zone.dimensions.height}
-                  onChange={(e) => {
-                    const h = parseFloat(e.target.value) || 0.8;
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Dĺžka vane (m):</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.5"
+                    max="3.0"
+                    value={zone.dimensions.width}
+                    onChange={(e) => {
+                      const w = parseFloat(e.target.value) || 1.6;
+                      onUpdateZone({
+                        ...zone,
+                        dimensions: { ...zone.dimensions!, width: w },
+                        widthMeters: w,
+                      });
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Šírka vane (m):</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.5"
+                    max="3.0"
+                    value={zone.dimensions.height}
+                    onChange={(e) => {
+                      const h = parseFloat(e.target.value) || 0.8;
+                      onUpdateZone({
+                        ...zone,
+                        dimensions: { ...zone.dimensions!, height: h },
+                      });
+                    }}
+                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Rýchle predvoľby rozmerov */}
+              <div className="flex flex-wrap gap-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
                     onUpdateZone({
                       ...zone,
-                      dimensions: { ...zone.dimensions!, height: h },
+                      dimensions: { width: 1.60, height: 0.80 },
+                      widthMeters: 1.60,
                     });
                   }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
-                />
+                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-mono transition"
+                >
+                  Vaňa 1.6×0.8m
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateZone({
+                      ...zone,
+                      dimensions: { width: 1.70, height: 0.75 },
+                      widthMeters: 1.70,
+                    });
+                  }}
+                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-mono transition"
+                >
+                  Vaňa 1.7×0.75m
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateZone({
+                      ...zone,
+                      dimensions: { width: 0.90, height: 0.90 },
+                      widthMeters: 0.90,
+                    });
+                  }}
+                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded text-[10px] font-mono transition border border-amber-500/30"
+                >
+                  Sprcha 0.9×0.9m
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Zóna 2: Pevne naviazaná na Zónu 1 */}
+            <div className="bg-amber-950/30 p-3 rounded-xl border border-amber-500/30 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-300 text-xs flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-amber-400" />
+                  Zóna 2 (Ochranný pás 60 cm)
+                </span>
+                <span className="text-[10px] bg-amber-950 text-amber-300 px-1.5 py-0.5 rounded font-mono border border-amber-800">
+                  Naviazaná na vaňu
+                </span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                Podľa <strong>STN 33 2000-7-701</strong> je Zóna 2 bezpečnostný pás <strong>60 cm</strong> rozprestierajúci sa okolo vane / sprchy až do výšky 2,25 m.
+              </p>
+              <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800 space-y-1 font-mono text-[11px]">
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Celkový rozmer so Zónou 2:</span>
+                  <span className="text-amber-300 font-bold">
+                    {(zone.dimensions.width + 1.20).toFixed(2)} × {(zone.dimensions.height + 1.20).toFixed(2)} m
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-slate-400">
+                  <span>Šírka ochranného pásu:</span>
+                  <span className="text-slate-200">0.60 m (po celom obvode)</span>
+                </div>
+              </div>
+              <div className="text-[10.5px] text-amber-200/80 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Pevne naviazaná – automaticky sa prispôsobuje polohe a rozmerom vane.</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Šírka pásma zóny */}
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-semibold text-slate-400">Šírka pásma v stene (STN norma)</label>
-          <div className="grid grid-cols-3 gap-1.5">
-            {[0.20, 0.30, 0.40].map((w) => (
-              <button
-                key={w}
-                onClick={() => onUpdateZone({ ...zone, widthMeters: w })}
-                className={`py-1.5 rounded-lg text-xs font-mono font-bold transition border ${
-                  Math.abs(currentWidth - w) < 0.02
-                    ? 'bg-teal-500 text-slate-950 border-teal-400'
-                    : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800'
-                }`}
-              >
-                {(w * 100).toFixed(0)} cm
-              </button>
-            ))}
+        {/* Šírka pásma zóny (iba pre stenové zóny) */}
+        {!isBathroom && (
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-400">Šírka pásma v stene (STN norma)</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[0.20, 0.30, 0.40].map((w) => (
+                <button
+                  key={w}
+                  onClick={() => onUpdateZone({ ...zone, widthMeters: w })}
+                  className={`py-1.5 rounded-lg text-xs font-mono font-bold transition border ${
+                    Math.abs(currentWidth - w) < 0.02
+                      ? 'bg-teal-500 text-slate-950 border-teal-400'
+                      : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800'
+                  }`}
+                >
+                  {(w * 100).toFixed(0)} cm
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Výškové umiestnenie */}
         <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-2">

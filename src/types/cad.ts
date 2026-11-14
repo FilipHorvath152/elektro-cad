@@ -179,7 +179,7 @@ export interface InstallationZone {
   type: InstallationZoneType;
   wallId?: string;       // pre zóny naviazané na stenu (ZVD, ZVH, ZVS, ZVZ, ZVR)
   roomId?: string;       // pre kúpeľňové alebo priestorové zóny
-  subType?: '0' | '1' | '2' | '3'; // pre kúpeľňové bezpečnostné zóny
+  subType?: '0' | '1' | '2' | '3' | '0_1'; // pre kúpeľňové bezpečnostné zóny
   distanceFromStartMeters?: number; // pozícia na stene od štartu
   lengthMeters?: number;            // dĺžka úseku na stene
   widthMeters: number;              // šírka pásma v metroch (napr. 0.30 pre horizontálne, 0.20 pre vertikálne)

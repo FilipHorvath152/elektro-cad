@@ -2570,17 +2570,28 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
 
             {/* B. Room-based and Custom Installation Zones (Bathrooms, Corridors) */}
             {floor.installationZones
-              ?.filter((z) => !z.wallId)
+              ?.filter((z) => !z.wallId && !(z.type === 'bathroom' && z.subType === '2'))
               .map((zone) => {
                 const isSelected = zone.id === activeSelectedZoneId;
 
-                // Bathroom Safety Zone
+                // Kúpeľňa: Bezpečnostné zóny podľa STN 33 2000-7-701
+                // Zóna 2 (ochranný pás 60 cm) je pevne naviazaná na Zónu 0 & 1 (vaňu/sprchu)!
                 if (zone.type === 'bathroom' && zone.center && zone.dimensions) {
-                  const isZone01 = zone.subType === '0';
-                  const rx = (zone.center.x - zone.dimensions.width / 2) * scale;
-                  const ry = (zone.center.y - zone.dimensions.height / 2) * scale;
-                  const rw = zone.dimensions.width * scale;
-                  const rh = zone.dimensions.height * scale;
+                  const bw = zone.dimensions.width;
+                  const bh = zone.dimensions.height;
+
+                  // 1. Zóna 0 & 1 (Vnútorný priestor vane / sprchy)
+                  const rx = (zone.center.x - bw / 2) * scale;
+                  const ry = (zone.center.y - bh / 2) * scale;
+                  const rw = bw * scale;
+                  const rh = bh * scale;
+
+                  // 2. Zóna 2: Pevne odvodený a naviazaný ochranný pás 60 cm (0.60 m) po celom obvode
+                  const z2Buffer = 0.60;
+                  const z2w = (bw + z2Buffer * 2) * scale;
+                  const z2h = (bh + z2Buffer * 2) * scale;
+                  const z2x = (zone.center.x - (bw + z2Buffer * 2) / 2) * scale;
+                  const z2y = (zone.center.y - (bh + z2Buffer * 2) / 2) * scale;
 
                   return (
                     <g
@@ -2594,52 +2605,105 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                       }}
                       className="cursor-pointer"
                     >
+                      {/* Ochranný pás Zóna 2 (60 cm okolo vane / sprchy) */}
+                      <rect
+                        x={z2x}
+                        y={z2y}
+                        width={z2w}
+                        height={z2h}
+                        fill="rgba(245, 158, 11, 0.08)"
+                        stroke="#f59e0b"
+                        strokeWidth={1.5}
+                        strokeDasharray="6 3"
+                        rx={8}
+                        className="transition-colors hover:fill-amber-500/15"
+                      >
+                        <title>STN 33 2000-7-701: Zóna 2 – Ochranný bezpečnostný pás 60 cm naviazaný na vaňu/sprchu (krytie min. IPX4, zákaz bežných zásuviek 230V)</title>
+                      </rect>
+                      {/* Zóna 2 Štítok */}
+                      <text
+                        x={zone.center.x * scale}
+                        y={z2y + 11}
+                        fill="#fbbf24"
+                        fontSize="8.5"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        fontFamily="monospace"
+                      >
+                        Zóna 2 (Ochranný pás 60 cm, min. IPX4)
+                      </text>
+
+                      {/* Zóna 0 & 1 (Vaňa / Sprchový kút) */}
                       <rect
                         x={rx}
                         y={ry}
                         width={rw}
                         height={rh}
-                        fill={isZone01 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.12)'}
-                        stroke={isSelected ? '#38bdf8' : isZone01 ? '#ef4444' : '#f59e0b'}
-                        strokeWidth={isSelected ? 2.5 : 1.5}
-                        strokeDasharray={isZone01 ? '4 4' : '6 3'}
+                        fill="rgba(239, 68, 68, 0.22)"
+                        stroke={isSelected ? '#38bdf8' : '#ef4444'}
+                        strokeWidth={isSelected ? 2.5 : 2}
                         rx={6}
-                      />
+                        className="transition-colors hover:fill-red-500/30"
+                      >
+                        <title>STN 33 2000-7-701: Zóna 0 a 1 – Vaňa / Sprchový kút (PRÍSNY ZÁKAZ 230V)</title>
+                      </rect>
                       <text
                         x={zone.center.x * scale}
-                        y={isZone01 ? zone.center.y * scale : ry + 12}
-                        fill={isZone01 ? '#f87171' : '#fbbf24'}
-                        fontSize="9"
+                        y={zone.center.y * scale - 4}
+                        fill="#fca5a5"
+                        fontSize="9.5"
                         fontWeight="bold"
                         textAnchor="middle"
                       >
-                        {isZone01 ? 'Vaňa / Sprcha: Zóna 0 & 1 (ZÁKAZ 230V)' : 'Zóna 2 (Ochranný pás 60cm, min. IPX4)'}
+                        🛁 Vaňa / Sprcha (Zóna 0 & 1)
+                      </text>
+                      <text
+                        x={zone.center.x * scale}
+                        y={zone.center.y * scale + 9}
+                        fill="#f87171"
+                        fontSize="8.5"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                        fontFamily="monospace"
+                      >
+                        {bw.toFixed(2)} × {bh.toFixed(2)} m (ZÁKAZ 230V)
                       </text>
 
                       {/* Interactive Handles when Selected */}
                       {isSelected && (
                         <g className="select-none">
-                          {/* Center Move Handle */}
+                          {/* Center Move Handle: Presúva vaňu aj s naviazanou Zónou 2 */}
                           <g
-                            transform={`translate(${zone.center.x * scale}, ${zone.center.y * scale})`}
+                            transform={`translate(${zone.center.x * scale}, ${zone.center.y * scale + 24})`}
                             className="cursor-move"
                             onMouseDown={(e) => handleStartZoneDrag(zone, 'area_center', e)}
                           >
-                            <title>Potiahnite pre presunutie vane/sprchy</title>
-                            <circle r="12" fill="#ef4444" stroke="#ffffff" strokeWidth="2" opacity="0.9" />
-                            <text x="0" y="3.5" fill="#ffffff" fontSize="10" fontWeight="bold" textAnchor="middle">
-                              ✥
+                            <title>Potiahnite pre presunutie vane/sprchy aj s naviazanou Zónou 2</title>
+                            <rect
+                              x="-56"
+                              y="-10"
+                              width="112"
+                              height="20"
+                              rx="5"
+                              fill="#ef4444"
+                              stroke="#ffffff"
+                              strokeWidth="1.2"
+                              filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))"
+                            />
+                            <text x="0" y="3.5" fill="#ffffff" fontSize="9" fontWeight="bold" textAnchor="middle">
+                              ✥ Presunúť vaňu
                             </text>
                           </g>
 
-                          {/* Corner Resize Handle */}
+                          {/* Corner Resize Handle: Menia sa rozmery vane a Zóna 2 sa automaticky prispôsobuje */}
                           <g
                             transform={`translate(${rx + rw}, ${ry + rh})`}
                             className="cursor-nwse-resize"
                             onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e)}
                           >
-                            <title>Potiahnite pre zmenu rozmeru vane/sprchy</title>
-                            <circle r="8" fill="#38bdf8" stroke="#ffffff" strokeWidth="2" />
+                            <title>Potiahnite pre zmenu rozmeru vane/sprchy (Zóna 2 sa prispôsobí automaticky)</title>
+                            <circle r="9" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.4))" />
+                            <circle r="3.5" fill="#ffffff" />
                           </g>
                         </g>
                       )}

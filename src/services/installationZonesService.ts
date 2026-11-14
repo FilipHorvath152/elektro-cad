@@ -153,41 +153,21 @@ export function generateSTNInstallationZones(floor: Floor): InstallationZone[] {
         const tubWidth = 1.60;
         const tubHeight = 0.80;
 
-        // Zóna 0 & 1 (Vaňa / Sprcha)
+        // Zóna 0 & 1 (Vaňa / Sprchový kút) a pevne naviazaná Zóna 2 (+60 cm ochranný pás)
         zones.push({
-          id: `zone-bath-0-1-${room.id}`,
-          name: `Kúpeľňa - Zóna 0 & 1 (${room.name})`,
+          id: `zone-bath-${room.id}`,
+          name: `Kúpeľňa – Zóna 0, 1 a 2 (${room.name})`,
           type: 'bathroom',
           roomId: room.id,
-          subType: '0',
+          subType: '0_1',
           widthMeters: tubWidth,
           elevationBottomMeters: 0,
           elevationTopMeters: 2.25,
           center: { x: p0.x + tubWidth / 2, y: p0.y + tubHeight / 2 },
           dimensions: { width: tubWidth, height: tubHeight },
-          description: 'STN 33 2000-7-701: Zóna 0 & 1 – Priestor vane / sprchy. Prísny zákaz montáže zásuviek a bežných spínačov.',
+          description: 'STN 33 2000-7-701: Zóna 0 a 1 (priestor vane/sprchy) a pevne naviazaná Zóna 2 (ochranný pás 60 cm).',
           stnReference: 'STN 33 2000-7-701',
           color: '#ef4444', // red-500
-          isAutomatic: true,
-        });
-
-        // Zóna 2 (Ochranný pás 0.6 m okolo Zóny 1)
-        const z2Width = tubWidth + 1.20;
-        const z2Height = tubHeight + 1.20;
-        zones.push({
-          id: `zone-bath-2-${room.id}`,
-          name: `Kúpeľňa - Zóna 2 (Ochranný pás 0.6m)`,
-          type: 'bathroom',
-          roomId: room.id,
-          subType: '2',
-          widthMeters: z2Width,
-          elevationBottomMeters: 0,
-          elevationTopMeters: 2.25,
-          center: { x: p0.x + tubWidth / 2, y: p0.y + tubHeight / 2 },
-          dimensions: { width: z2Width, height: z2Height },
-          description: 'STN 33 2000-7-701: Zóna 2 – Ochranný pás 60 cm od vane. Povolené iba špeciálne svietidlá min. IPX4, žiadne bežné 230V zásuvky.',
-          stnReference: 'STN 33 2000-7-701',
-          color: '#f59e0b', // amber-500
           isAutomatic: true,
         });
       }
@@ -318,44 +298,31 @@ export function addBathroomSafetyZone(
   roomId: string | undefined,
   floor: Floor
 ): InstallationZone[] {
-  const existing = floor.installationZones || [];
+  // Prečistíme prípadné zastarané samostatné objekty zóny 2
+  const existing = (floor.installationZones || []).filter(
+    (z) => !(z.type === 'bathroom' && z.subType === '2')
+  );
   const id = Date.now();
 
-  const zone01: InstallationZone = {
-    id: `zone-bath-0-custom-${id}`,
-    name: 'Kúpeľňa - Zóna 0 & 1 (Vaňa / Sprchový kút)',
+  // STN 33 2000-7-701: Zóna 2 je pevne naviazaná na Zónu 0 a 1 (vaňu/sprchu), nie je to samostatná zóna!
+  const bathZone: InstallationZone = {
+    id: `zone-bath-${id}`,
+    name: 'Kúpeľňa – Zóna 0, 1 a 2 (Vaňa / Sprchový kút)',
     type: 'bathroom',
     roomId,
-    subType: '0',
+    subType: '0_1',
     widthMeters: width,
     elevationBottomMeters: 0,
     elevationTopMeters: 2.25,
     center,
     dimensions: { width, height },
-    description: 'STN 33 2000-7-701: Zóna 0 a 1 – Priamy zákaz inštalácie zásuviek a bežných spínačov.',
+    description: 'STN 33 2000-7-701: Zóna 0 a 1 (vaňa/sprchový kút) s automaticky naviazaným ochranným pásom Zóna 2 (60 cm).',
     stnReference: 'STN 33 2000-7-701',
     color: '#ef4444',
     isAutomatic: false,
   };
 
-  const zone2: InstallationZone = {
-    id: `zone-bath-2-custom-${id}`,
-    name: 'Kúpeľňa - Zóna 2 (Ochranný pás 60 cm)',
-    type: 'bathroom',
-    roomId,
-    subType: '2',
-    widthMeters: width + 1.20,
-    elevationBottomMeters: 0,
-    elevationTopMeters: 2.25,
-    center,
-    dimensions: { width: width + 1.20, height: height + 1.20 },
-    description: 'STN 33 2000-7-701: Zóna 2 – Zákaz bežných 230V zásuviek, vyžaduje sa krytie min. IPX4.',
-    stnReference: 'STN 33 2000-7-701',
-    color: '#f59e0b',
-    isAutomatic: false,
-  };
-
-  return [...existing, zone01, zone2];
+  return [...existing, bathZone];
 }
 
 /**

@@ -295,13 +295,13 @@ export const InstallationZonesGuideModal: React.FC<InstallationZonesGuideModalPr
 
                 <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/30 flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-amber-400 text-sm">Zóna 2 (Ochranný pás 60 cm okolo Zóny 1)</span>
+                    <span className="font-bold text-amber-400 text-sm">Zóna 2 (Ochranný pás 60 cm – pevne naviazaný na vaňu)</span>
                     <span className="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded font-mono border border-amber-800">
                       Min. krytie IPX4
                     </span>
                   </div>
                   <p className="text-slate-300 text-[11px]">
-                    Pásmo široké 60 cm od okraja vane alebo sprchy. Zakázané montovať bežné 230V zásuvky. Povolené iba špeciálne svietidlá a ventilátory s krytím min. IPX4 chránené prúdovým chráničom RCD 30 mA.
+                    Bezpečnostné pásmo široké 60 cm po celom obvode vane alebo sprchy. Nie je to samostatná zóna – <strong>je pevne naviazaná na Zónu 1</strong> a pohybuje sa aj mení rozmery automaticky s vaňou. Sú tu zakázané bežné zásuvky 230V a povolené iba špeciálne svietidlá a spotrebiče s krytím min. IPX4 zapojené cez prúdový chránič RCD 30 mA.
                   </p>
                 </div>
 
