@@ -14,6 +14,7 @@ import {
   Minus,
   Sparkles,
   Info,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { InstallationZone, InstallationZoneType, Wall } from '../types/cad';
 
@@ -305,23 +306,69 @@ export const ZonePropertiesPanel: React.FC<ZonePropertiesPanelProps> = ({
             </div>
 
             {/* Strana steny */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-slate-400">Strana steny</label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(['both', 'left', 'right'] as const).map((side) => (
+            <div className="space-y-2 bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-sky-400" />
+                  Strana steny
+                </label>
+                {isKitchen && (
+                  <span className="text-[10px] text-amber-400 font-medium">Iba jedna strana (kuchyňa)</span>
+                )}
+              </div>
+
+              <div className={`grid ${isKitchen ? 'grid-cols-2' : 'grid-cols-3'} gap-1.5`}>
+                {!isKitchen && (
                   <button
-                    key={side}
-                    onClick={() => onUpdateZone({ ...zone, side })}
+                    type="button"
+                    onClick={() => onUpdateZone({ ...zone, side: 'both' })}
                     className={`py-1.5 rounded-lg text-xs font-bold transition border ${
-                      (zone.side || 'both') === side
+                      (zone.side || 'both') === 'both'
                         ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-md shadow-sky-500/20'
-                        : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800'
+                        : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
                     }`}
                   >
-                    {side === 'both' ? 'Obe strany' : side === 'left' ? 'Ľavá strana' : 'Pravá strana'}
+                    Obe strany
                   </button>
-                ))}
+                )}
+                <button
+                  type="button"
+                  onClick={() => onUpdateZone({ ...zone, side: 'left' })}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition border ${
+                    ((isKitchen && (!zone.side || zone.side === 'both')) ? 'left' : (zone.side || 'both')) === 'left'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
+                      : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
+                  }`}
+                >
+                  Ľavá strana
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateZone({ ...zone, side: 'right' })}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition border ${
+                    ((isKitchen && (!zone.side || zone.side === 'both')) ? 'left' : (zone.side || 'both')) === 'right'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
+                      : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
+                  }`}
+                >
+                  Pravá strana
+                </button>
               </div>
+
+              {/* Rýchle prehodenie strany steny */}
+              <button
+                type="button"
+                onClick={() => {
+                  const currentEffective = (isKitchen && (!zone.side || zone.side === 'both')) ? 'left' : (zone.side || 'both');
+                  const nextSide = currentEffective === 'left' ? 'right' : 'left';
+                  onUpdateZone({ ...zone, side: nextSide });
+                }}
+                className="w-full py-1.5 px-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-lg text-[11px] font-medium text-slate-300 flex items-center justify-center gap-1.5 transition active:scale-95"
+                title="Prehodiť zónu na opačnú stranu steny (napr. dovnútra miestnosti)"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5 text-sky-400" />
+                <span>Prehodiť stranu steny (vľavo ⇄ vpravo)</span>
+              </button>
             </div>
           </div>
         )}

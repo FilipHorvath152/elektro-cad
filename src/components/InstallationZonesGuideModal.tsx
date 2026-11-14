@@ -224,15 +224,15 @@ export const InstallationZonesGuideModal: React.FC<InstallationZonesGuideModalPr
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                   <div className="bg-red-950/40 p-3 rounded-xl border border-red-800/40">
-                    <span className="font-bold text-red-300 block mb-1">❌ Chybný postup (celá stena):</span>
+                    <span className="font-bold text-red-300 block mb-1">❌ Chybný postup (obe strany steny):</span>
                     <span className="text-slate-400 text-[11px]">
-                      Zóna 115 cm je natiahnutá po celej dĺžke steny. Káble vo výške 115 cm potom prechádzajú za jedálenským stolom alebo TV stenou, kde hrozí ich navŕtanie.
+                      Zóna kuchynskej linky sa nesmie kresliť na obe strany steny. Zásuvky nad pracovnou doskou patria výlučne do vnútra kuchyne, nie do susednej izby, chodby alebo exteriéru.
                     </span>
                   </div>
                   <div className="bg-emerald-950/40 p-3 rounded-xl border border-emerald-800/40">
-                    <span className="font-bold text-emerald-300 block mb-1">✅ Správny postup (len plocha):</span>
+                    <span className="font-bold text-emerald-300 block mb-1">✅ Správny postup (jedna strana & vymedzený úsek):</span>
                     <span className="text-slate-400 text-[11px]">
-                      Zóna ZVS je vymedzená len v dĺžke napr. 2.4 m až 3.2 m presne tam, kde bude stáť linka. Zvyšok steny má štandardnú dolnú zónu ZVD (pre zásuvku vysávača alebo lampu).
+                      Zóna ZVS je jednostranná (Ľavá alebo Pravá strana steny) a vymedzená len v dĺžke linky (napr. 2.4 m). Ak ju nakreslíte na opačnú stranu, tlačidlom <em>Prehodiť stranu</em> ju jedným klikom otočíte dovnútra.
                     </span>
                   </div>
                 </div>

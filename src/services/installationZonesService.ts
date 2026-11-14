@@ -216,6 +216,48 @@ export function toggleKitchenZoneOnWall(wallId: string, floor: Floor): Installat
   const dy = wall.end.y - wall.start.y;
   const wallLength = Math.hypot(dx, dy);
 
+  // Kuchynská linka je výhradne na jednej strane steny (v kuchyni).
+  // Ak sú definované miestnosti, skúsime automaticky zistiť stranu s kuchyňou.
+  let initialSide: 'left' | 'right' = 'left';
+  if (floor.rooms && floor.rooms.length > 0 && wallLength > 0.1) {
+    const ux = dx / wallLength;
+    const uy = dy / wallLength;
+    const nx = -uy;
+    const ny = ux;
+    const midX = (wall.start.x + wall.end.x) / 2;
+    const midY = (wall.start.y + wall.end.y) / 2;
+    const testLeft = { x: midX + nx * 0.25, y: midY + ny * 0.25 };
+    const testRight = { x: midX - nx * 0.25, y: midY - ny * 0.25 };
+
+    const kitchenRoom = floor.rooms.find(
+      (r) =>
+        r.type === 'kitchen' ||
+        r.name.toLowerCase().includes('kuchyň') ||
+        r.name.toLowerCase().includes('kuchyn') ||
+        r.name.toLowerCase().includes('obýv') ||
+        r.name.toLowerCase().includes('obyv')
+    );
+
+    if (kitchenRoom && kitchenRoom.points && kitchenRoom.points.length >= 3) {
+      const pointInPolygon = (pt: Point2D, poly: Point2D[]) => {
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          const xi = poly[i].x, yi = poly[i].y;
+          const xj = poly[j].x, yj = poly[j].y;
+          const intersect = yi > pt.y !== yj > pt.y && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      };
+
+      if (pointInPolygon(testRight, kitchenRoom.points)) {
+        initialSide = 'right';
+      } else if (pointInPolygon(testLeft, kitchenRoom.points)) {
+        initialSide = 'left';
+      }
+    }
+  }
+
   const newZone: InstallationZone = {
     id: `zone-zvs-${wallId}-${Date.now()}`,
     name: `ZVS - Kuchynská linka (os 115 cm)`,
@@ -226,6 +268,7 @@ export function toggleKitchenZoneOnWall(wallId: string, floor: Floor): Installat
     widthMeters: 0.30,
     elevationBottomMeters: 0.90,
     elevationTopMeters: 1.20,
+    side: initialSide,
     description: 'STN 33 2130: Stredná vodorovná zóna 90-120 cm (os 115 cm) nad hotovou podlahou pre zásuvky kuchynskej linky a pracovných dosiek.',
     stnReference: 'STN 33 2130 čl. 7.6.2',
     color: '#f59e0b', // amber-500
@@ -409,6 +452,9 @@ export function addWallZoneSegment(
     stnRef = 'STN 33 2130 čl. 7.6.3';
   }
 
+  // Kuchynská linka (ZVS) je výhradne na jednej strane steny (v kuchyni), preto má predvolenú hodnotu 'left', nie 'both'!
+  const defaultSide: 'left' | 'right' | 'both' = type === 'zvs' ? 'left' : 'both';
+
   const newZone: InstallationZone = {
     id: `zone-seg-${wallId}-${Date.now()}`,
     name,
@@ -419,7 +465,7 @@ export function addWallZoneSegment(
     widthMeters: 0.30,
     elevationBottomMeters: elevationBottom,
     elevationTopMeters: elevationTop,
-    side: 'both',
+    side: options?.side || defaultSide,
     description: desc,
     stnReference: stnRef,
     color,

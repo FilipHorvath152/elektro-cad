@@ -224,12 +224,43 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
             opacity = 0.18;
           }
 
-          const zoneGeo = new THREE.BoxGeometry(zLen, zHeight, wall.thickness + 0.015);
-          const zoneMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity });
-          const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
-          zoneMesh.position.set(zCenterX, zCenterY, zCenterZ);
-          zoneMesh.rotation.y = -angle;
-          scene.add(zoneMesh);
+          // Kuchynská linka (ZVS) patrí výhradne na jednu stranu steny (v kuchyni) a nesmie presahovať na druhú stranu steny!
+          const isKitchen = z.type === 'zvs' || z.name?.toLowerCase().includes('kuchyň') || z.name?.toLowerCase().includes('linka');
+          const rawSide = z.side;
+          const effectiveSide = (isKitchen && (!rawSide || rawSide === 'both')) ? 'left' : (rawSide || 'both');
+
+          const nx = -uy;
+          const nz = ux;
+          const halfThick = wall.thickness / 2;
+          const overlayThick = 0.018;
+
+          if (effectiveSide === 'left') {
+            const posX = zCenterX + (halfThick + 0.005) * nx;
+            const posZ = zCenterZ + (halfThick + 0.005) * nz;
+            const zoneGeo = new THREE.BoxGeometry(zLen, zHeight, overlayThick);
+            const zoneMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity });
+            const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
+            zoneMesh.position.set(posX, zCenterY, posZ);
+            zoneMesh.rotation.y = -angle;
+            scene.add(zoneMesh);
+          } else if (effectiveSide === 'right') {
+            const posX = zCenterX - (halfThick + 0.005) * nx;
+            const posZ = zCenterZ - (halfThick + 0.005) * nz;
+            const zoneGeo = new THREE.BoxGeometry(zLen, zHeight, overlayThick);
+            const zoneMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity });
+            const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
+            zoneMesh.position.set(posX, zCenterY, posZ);
+            zoneMesh.rotation.y = -angle;
+            scene.add(zoneMesh);
+          } else {
+            // Obojstranná zóna
+            const zoneGeo = new THREE.BoxGeometry(zLen, zHeight, wall.thickness + 0.015);
+            const zoneMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity });
+            const zoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
+            zoneMesh.position.set(zCenterX, zCenterY, zCenterZ);
+            zoneMesh.rotation.y = -angle;
+            scene.add(zoneMesh);
+          }
         });
       } else {
         // Fallback default guides for wall if no explicit zones generated yet

@@ -152,6 +152,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
     startDist: number;
     currentDist: number;
     type: InstallationZoneType;
+    side: 'left' | 'right';
   } | null>(null);
 
   // Display toggles
@@ -645,11 +646,23 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         const dist = Number((wallSnap.ratio * len).toFixed(2));
         const zoneType: InstallationZoneType =
           activeTool === 'zone_kitchen' ? 'zvs' : activeTool === 'zone_vertical' ? 'zvz' : 'zvs';
+
+        // Určenie strany steny, na ktorú používateľ klikol (ľavá vs. pravá strana vektora steny)
+        const ux = len > 0.001 ? dx / len : 0;
+        const uy = len > 0.001 ? dy / len : 0;
+        const nx = -uy;
+        const ny = ux;
+        const vx = worldPt.x - wallSnap.proj.x;
+        const vy = worldPt.y - wallSnap.proj.y;
+        const dot = vx * nx + vy * ny;
+        const clickedSide: 'left' | 'right' = dot >= 0 ? 'left' : 'right';
+
         setZoneDrawState({
           wallId: wallSnap.wall.id,
           startDist: dist,
           currentDist: dist,
           type: zoneType,
+          side: clickedSide,
         });
       }
       return;
@@ -1344,9 +1357,16 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         if (wLen > 0.01) {
           const ux = wdx / wLen;
           const uy = wdy / wLen;
+          const nx = -uy;
+          const ny = ux;
           const proj = (worldPt.x - targetWall.start.x) * ux + (worldPt.y - targetWall.start.y) * uy;
           const clamped = Math.max(0, Math.min(wLen, Number(proj.toFixed(2))));
-          setZoneDrawState((prev) => (prev ? { ...prev, currentDist: clamped } : null));
+
+          // Dynamické prepínanie strany podľa pohybu kurzora myši voči stene
+          const perpDist = (worldPt.x - targetWall.start.x) * nx + (worldPt.y - targetWall.start.y) * ny;
+          const currentSide: 'left' | 'right' = perpDist >= 0 ? 'left' : 'right';
+
+          setZoneDrawState((prev) => (prev ? { ...prev, currentDist: clamped, side: currentSide } : null));
         }
       }
       return;
@@ -1482,7 +1502,8 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
           finalStart,
           len,
           zoneDrawState.type,
-          floor
+          floor,
+          { side: zoneDrawState.side }
         );
         const createdZone = newZones[newZones.length - 1];
         onUpdateFloor((prev) => ({
@@ -2270,9 +2291,11 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                 const ePt = { x: wall.start.x + ux * eDist, y: wall.start.y + uy * eDist };
                 const midPt = { x: wall.start.x + ux * midDist, y: wall.start.y + uy * midDist };
 
-                const side = zone.side || 'both';
-                const showLeft = side === 'both' || side === 'left';
-                const showRight = side === 'both' || side === 'right';
+                // Kuchynská linka (ZVS) patrí výhradne na jednu stranu steny (v kuchyni) a nesmie byť obojstranná!
+                const rawSide = zone.side;
+                const effectiveSide = (isKitchen && (!rawSide || rawSide === 'both')) ? 'left' : (rawSide || 'both');
+                const showLeft = effectiveSide === 'both' || effectiveSide === 'left';
+                const showRight = effectiveSide === 'both' || effectiveSide === 'right';
 
                 // Left polygon (in pixels)
                 const p1Lx = (sPt.x + nx * hT) * scale;
@@ -2295,6 +2318,25 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                 const p4Ry = (sPt.y - ny * (hT + zWidth)) * scale;
 
                 const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+                // Umiestnenie manipulačných úchytov priamo na viditeľný pás zóny
+                const stripOffsetSign = (showLeft && !showRight) ? 1 : (showRight && !showLeft) ? -1 : 0;
+                const stripPerpOffset = stripOffsetSign * (hT + zWidth / 2);
+
+                const handleStartPt = {
+                  x: (sPt.x + nx * stripPerpOffset) * scale,
+                  y: (sPt.y + ny * stripPerpOffset) * scale,
+                };
+                const handleEndPt = {
+                  x: (ePt.x + nx * stripPerpOffset) * scale,
+                  y: (ePt.y + ny * stripPerpOffset) * scale,
+                };
+                const handleMidPt = {
+                  x: (midPt.x + nx * stripPerpOffset) * scale,
+                  y: (midPt.y + ny * stripPerpOffset) * scale,
+                };
+
+                const sideBadgeLabel = effectiveSide === 'left' ? ' [Ľavá]' : effectiveSide === 'right' ? ' [Pravá]' : '';
 
                 return (
                   <g
@@ -2334,30 +2376,30 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
 
                     {/* Label Badge on Zone */}
                     <g
-                      transform={`translate(${midPt.x * scale}, ${midPt.y * scale}) rotate(${
+                      transform={`translate(${handleMidPt.x}, ${handleMidPt.y}) rotate(${
                         angleDeg > 90 || angleDeg < -90 ? angleDeg + 180 : angleDeg
                       })`}
                     >
                       <rect
-                        x="-45"
-                        y={-hT * scale - 14}
-                        width="90"
-                        height="13"
+                        x="-52"
+                        y="-7"
+                        width="104"
+                        height="14"
                         rx="3.5"
-                        fill={isSelected ? '#0284c7' : isKitchen ? 'rgba(245, 158, 11, 0.9)' : 'rgba(15, 23, 42, 0.88)'}
+                        fill={isSelected ? '#0284c7' : isKitchen ? 'rgba(245, 158, 11, 0.95)' : 'rgba(15, 23, 42, 0.88)'}
                         stroke={zoneColor}
                         strokeWidth="0.8"
                       />
                       <text
                         x="0"
-                        y={-hT * scale - 5}
+                        y="3"
                         fill={isSelected ? '#ffffff' : isKitchen ? '#020617' : zoneColor}
                         fontSize="8"
                         fontWeight="bold"
                         textAnchor="middle"
                         fontFamily="monospace"
                       >
-                        {isKitchen ? `ZVS Linka ${zLen.toFixed(1)}m` : `${zone.type.toUpperCase()} ${zLen.toFixed(1)}m`}
+                        {isKitchen ? `🍳 Linka ${zLen.toFixed(1)}m${sideBadgeLabel}` : `${zone.type.toUpperCase()} ${zLen.toFixed(1)}m${sideBadgeLabel}`}
                       </text>
                     </g>
 
@@ -2366,16 +2408,16 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                       <g className="zone-handles select-none">
                         {/* 1. Center Move Handle / Badge */}
                         <g
-                          transform={`translate(${midPt.x * scale}, ${midPt.y * scale}) rotate(${
+                          transform={`translate(${handleMidPt.x}, ${handleMidPt.y}) rotate(${
                             angleDeg > 90 || angleDeg < -90 ? angleDeg + 180 : angleDeg
                           })`}
                           className="cursor-move"
                           onMouseDown={(e) => handleStartZoneDrag(zone, 'move', e)}
                         >
                           <rect
-                            x="-58"
-                            y={hT * scale + 4}
-                            width="116"
+                            x="-60"
+                            y="10"
+                            width="120"
                             height="18"
                             rx="5"
                             fill="#0284c7"
@@ -2385,7 +2427,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                           />
                           <text
                             x="0"
-                            y={hT * scale + 16}
+                            y="22"
                             fill="#ffffff"
                             fontSize="9"
                             fontWeight="bold"
@@ -2397,7 +2439,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
 
                         {/* 2. Start Resize Handle */}
                         <g
-                          transform={`translate(${sPt.x * scale}, ${sPt.y * scale})`}
+                          transform={`translate(${handleStartPt.x}, ${handleStartPt.y})`}
                           className="cursor-ew-resize"
                           onMouseDown={(e) => handleStartZoneDrag(zone, 'start', e)}
                         >
@@ -2408,7 +2450,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
 
                         {/* 3. End Resize Handle */}
                         <g
-                          transform={`translate(${ePt.x * scale}, ${ePt.y * scale})`}
+                          transform={`translate(${handleEndPt.x}, ${handleEndPt.y})`}
                           className="cursor-ew-resize"
                           onMouseDown={(e) => handleStartZoneDrag(zone, 'end', e)}
                         >
@@ -2480,30 +2522,38 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
               const ePt = { x: wall.start.x + ux * eDist, y: wall.start.y + uy * eDist };
               const midPt = { x: (sPt.x + ePt.x) / 2, y: (sPt.y + ePt.y) / 2 };
 
-              const p1Lx = (sPt.x + nx * hT) * scale;
-              const p1Ly = (sPt.y + ny * hT) * scale;
-              const p2Lx = (ePt.x + nx * hT) * scale;
-              const p2Ly = (ePt.y + ny * hT) * scale;
-              const p3Lx = (ePt.x + nx * (hT + zWidth)) * scale;
-              const p3Ly = (ePt.y + ny * (hT + zWidth)) * scale;
-              const p4Lx = (sPt.x + nx * (hT + zWidth)) * scale;
-              const p4Ly = (sPt.y + ny * (hT + zWidth)) * scale;
+              const side = zoneDrawState.side || 'left';
+              const sign = side === 'right' ? -1 : 1;
+
+              const p1x = (sPt.x + sign * nx * hT) * scale;
+              const p1y = (sPt.y + sign * ny * hT) * scale;
+              const p2x = (ePt.x + sign * nx * hT) * scale;
+              const p2y = (ePt.y + sign * ny * hT) * scale;
+              const p3x = (ePt.x + sign * nx * (hT + zWidth)) * scale;
+              const p3y = (ePt.y + sign * ny * (hT + zWidth)) * scale;
+              const p4x = (sPt.x + sign * nx * (hT + zWidth)) * scale;
+              const p4y = (sPt.y + sign * ny * (hT + zWidth)) * scale;
+
+              const previewTagCenter = {
+                x: (midPt.x + sign * nx * (hT + zWidth / 2)) * scale,
+                y: (midPt.y + sign * ny * (hT + zWidth / 2)) * scale,
+              };
 
               return (
                 <g className="pointer-events-none">
                   <polygon
-                    points={`${p1Lx},${p1Ly} ${p2Lx},${p2Ly} ${p3Lx},${p3Ly} ${p4Lx},${p4Ly}`}
+                    points={`${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y} ${p4x},${p4y}`}
                     fill="rgba(245, 158, 11, 0.35)"
                     stroke="#f59e0b"
                     strokeWidth="2"
                     strokeDasharray="4 4"
                   />
                   {/* Floating Dimension Tag */}
-                  <g transform={`translate(${midPt.x * scale}, ${midPt.y * scale - 25})`}>
+                  <g transform={`translate(${previewTagCenter.x}, ${previewTagCenter.y - 20})`}>
                     <rect
-                      x="-70"
+                      x="-78"
                       y="-12"
-                      width="140"
+                      width="156"
                       height="24"
                       rx="6"
                       fill="rgba(15, 23, 42, 0.95)"
@@ -2511,7 +2561,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                       strokeWidth="1.2"
                     />
                     <text x="0" y="4" fill="#fbbf24" fontSize="10" fontWeight="bold" textAnchor="middle">
-                      {zoneDrawState.type === 'zvs' ? '🍳 Linka' : 'Úsek'}: {drawnLen.toFixed(2)} m (od {sDist.toFixed(2)} m)
+                      {zoneDrawState.type === 'zvs' ? '🍳 Linka' : 'Úsek'} [{side === 'left' ? 'Ľavá strana' : 'Pravá strana'}]: {drawnLen.toFixed(2)} m
                     </text>
                   </g>
                 </g>
