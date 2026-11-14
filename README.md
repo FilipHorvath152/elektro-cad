@@ -53,14 +53,29 @@ npm run build
 
 ---
 
-## ☁️ Nasadenie na Vercel
+## ☁️ Nasadenie na Vercel & Zdieľanie pre kolegov
 
-Projekt je pripravený na nasadenie jedným kliknutím na **Vercel**:
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FFilipHorvath152%2Felektro-cad)
 
-1. Prepojte GitHub repozitár `https://github.com/FilipHorvath152/elektro-cad` s Vercel účtom.
-2. Konfigurácia (`vercel.json`) je predpripravená:
-   - Framework: **Vite**
-   - Build Command: `npm run build`
-   - Output Directory: `dist`
-   - SPA routing rewrites: `/* -> /index.html`
-3. Kliknite **Deploy** a aplikácia bude okamžite dostupná online s HTTPS a WebRTC podporou.
+Projekt je plne pripravený na nasadenie na **Vercel Edge Cloud**:
+
+### 1. Ako sa kolega dostane k nástroju a rozpracovanému projektu z iného zariadenia:
+1. **Globálny prístup bez inštalácie**:
+   - Kolega otvorí Vercel URL (napr. `https://elektro-cad.vercel.app`) na akomkoľvek zariadení (Windows PC, Mac, iPhone, iPad, Android).
+   - Nepotrebuje inštalovať Node.js, npm ani žiadne programy – všetko beží priamo v prehliadači s hardvérovou WebGL akceleráciou pre 3D.
+2. **Okamžité načítanie rozpracovaného projektu (Odkaz / QR kód)**:
+   - V aplikácii kliknite na **"Zdieľať & Spolupráca"** a v záložke **"Odkaz s projektom"** kliknite **"Kopírovať odkaz"** alebo ukážte kolegovi **QR kód**.
+   - Stav celého projektu (steny, zóny, elektroinštalácia, rozvádzače) sa skomprimuje pomocou natívneho GZIP a zakóduje priamo do URL adresy (`#project=...`).
+   - Keď kolega otvorí odkaz alebo naskenuje QR kód na mobile/tablete, projekt sa mu ihneď načíta.
+3. **Živá synchronizácia v reálnom čase (P2P WebRTC)**:
+   - Ak obaja pracujete súčasne, zmeny na stenách, komponentoch a rozvádzačoch sa cez WebRTC DataChannels prenášajú okamžite obojsmerne vrátane kurzorov.
+
+### 2. Automatický CI/CD deployment
+- Repozitár: `https://github.com/FilipHorvath152/elektro-cad` (vetva `main`).
+- Každý `git push` do vetvy `main` automaticky aktivuje nový produkčný build na Verceli do 30 sekúnd.
+- Konfigurácia `vercel.json` obsahuje:
+  - Framework: **Vite**
+  - Build Command: `npm run build`
+  - Output Directory: `dist`
+  - SPA Routing Rewrites: `/* -> /index.html` (zamedzuje 404 chybám pri obnovení stránky)
+  - HTTP Cache-Control hlavičky pre statické assety.

@@ -369,3 +369,85 @@ export class CollaborationManager {
 
 // Global singleton instance
 export const collabManager = new CollaborationManager();
+
+/**
+ * Komprimuje celý rozpracovaný projekt pomocou GZIP a kóduje do URL-safe reťazca.
+ * Umožňuje kolegovi otvoriť odkaz na mobile, tablete či inom PC bez potreby servera alebo databázy.
+ */
+export async function compressProjectToUrlHash(project: ProjectData): Promise<string> {
+  const jsonStr = JSON.stringify(project);
+  const encoder = new TextEncoder();
+  const inputData = encoder.encode(jsonStr);
+
+  if (typeof CompressionStream !== 'undefined') {
+    const stream = new Blob([inputData]).stream().pipeThrough(new CompressionStream('gzip'));
+    const compressedResponse = new Response(stream);
+    const buffer = await compressedResponse.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    let binary = '';
+    const CHUNK_SIZE = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK_SIZE)));
+    }
+    const base64 = btoa(binary);
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } else {
+    return encodeURIComponent(jsonStr);
+  }
+}
+
+/**
+ * Dekomprimuje projekt z URL hash (#project=...).
+ */
+export async function decompressProjectFromUrlHash(hashStr: string): Promise<ProjectData | null> {
+  try {
+    let clean = hashStr.trim();
+    if (clean.startsWith('#project=')) {
+      clean = clean.substring('#project='.length);
+    } else if (clean.startsWith('project=')) {
+      clean = clean.substring('project='.length);
+    } else if (clean.startsWith('#')) {
+      clean = clean.substring(1);
+    }
+    if (!clean) return null;
+
+    if (typeof DecompressionStream !== 'undefined') {
+      let base64 = clean.replace(/-/g, '+').replace(/_/g, '/');
+      while (base64.length % 4 !== 0) {
+        base64 += '=';
+      }
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      const decompressedResponse = new Response(stream);
+      const text = await decompressedResponse.text();
+      return JSON.parse(text) as ProjectData;
+    } else {
+      const text = decodeURIComponent(clean);
+      return JSON.parse(text) as ProjectData;
+    }
+  } catch (err) {
+    console.error('Failed to decompress project from URL hash:', err);
+    return null;
+  }
+}
+
+/**
+ * Vygeneruje kompletný odkaz obsahujúci stav rozpracovaného projektu (a voliteľne kód miestnosti).
+ */
+export async function generateProjectShareUrl(
+  project: ProjectData,
+  roomId?: string,
+  customBaseUrl?: string
+): Promise<string> {
+  const hash = await compressProjectToUrlHash(project);
+  const baseUrl = customBaseUrl || (typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}`
+    : 'https://elektro-cad.vercel.app/');
+  const roomParam = roomId ? `?room=${encodeURIComponent(roomId)}` : '';
+  return `${baseUrl}${roomParam}#project=${hash}`;
+}

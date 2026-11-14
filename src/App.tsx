@@ -15,7 +15,8 @@ import { SchematicViewer } from './components/SchematicViewer';
 import { BOMReport } from './components/BOMReport';
 import { PDFImportModal } from './components/PDFImportModal';
 import { CollaborationModal } from './components/CollaborationModal';
-import { collabManager, CollaboratorUser } from './services/collaborationService';
+import { collabManager, CollaboratorUser, decompressProjectFromUrlHash } from './services/collaborationService';
+import { CheckCircle2, X } from 'lucide-react';
 import { ParsedPDFResult } from './services/pdfPlanParser';
 import { calculateComponentRoute } from './services/routingService';
 import { generateSTNInstallationZones } from './services/installationZonesService';
@@ -80,6 +81,7 @@ export function App() {
 
   // Multi-device real-time collaboration state
   const [isCollabModalOpen, setIsCollabModalOpen] = useState(false);
+  const [importedNotification, setImportedNotification] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -90,6 +92,44 @@ export function App() {
   });
   const [collaborators, setCollaborators] = useState<CollaboratorUser[]>([collabManager.getCurrentUser()]);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, { x: number; y: number; floorId: string; user?: CollaboratorUser }>>({});
+
+  // Auto-load project state from URL hash (#project=...) for multi-device sharing
+  useEffect(() => {
+    const loadFromHash = async () => {
+      if (typeof window === 'undefined') return;
+      const hash = window.location.hash;
+      if (hash && (hash.startsWith('#project=') || hash.includes('project='))) {
+        try {
+          const match = hash.match(/project=([^&]+)/);
+          const rawHash = match ? match[1] : hash.replace(/^#\/?/, '');
+          const decoded = await decompressProjectFromUrlHash(rawHash);
+          if (decoded && decoded.floors && decoded.floors.length > 0) {
+            setHistory({
+              past: [],
+              present: decoded,
+              future: [],
+            });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(decoded));
+            setImportedNotification(`Rozpracovaný projekt "${decoded.name || 'Projekt'}" bol úspešne načítaný z odkazu od kolegu!`);
+            // Clean URL hash so refreshing doesn't overwrite work
+            const cleanUrl = window.location.pathname + window.location.search;
+            window.history.replaceState(null, '', cleanUrl);
+          }
+        } catch (err) {
+          console.error('Failed to load project from URL hash:', err);
+        }
+      }
+    };
+    loadFromHash();
+  }, []);
+
+  // Auto-dismiss notification after 8 seconds
+  useEffect(() => {
+    if (importedNotification) {
+      const timer = setTimeout(() => setImportedNotification(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [importedNotification]);
 
   // Connect to P2P WebRTC room
   useEffect(() => {
@@ -936,6 +976,26 @@ export function App() {
           setIsZoneGuideOpen(false);
         }}
       />
+
+      {/* Floating Toast Notification for Multi-Device Project Sharing */}
+      {importedNotification && (
+        <div className="fixed top-20 right-6 z-50 max-w-md bg-slate-900 border border-emerald-500/60 text-white p-4 rounded-xl shadow-2xl shadow-emerald-950/60 flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div className="flex-1 text-xs">
+            <div className="font-bold text-emerald-300 text-sm mb-0.5">Rozpracovaný projekt načítaný</div>
+            <p className="text-slate-300 leading-relaxed">{importedNotification}</p>
+          </div>
+          <button
+            onClick={() => setImportedNotification(null)}
+            className="text-slate-400 hover:text-white p-1 rounded transition"
+            title="Zavrieť"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

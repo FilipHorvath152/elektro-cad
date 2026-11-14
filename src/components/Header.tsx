@@ -1,6 +1,6 @@
 import React from 'react';
 import { Floor, PathwayPreference, ProjectData } from '../types/cad';
-import { Zap, Box, Compass, Layers, FileSpreadsheet, Plus, Upload, Download, Sparkles, FileUp, Undo2, Redo2, Users } from 'lucide-react';
+import { Zap, Box, Compass, Layers, FileSpreadsheet, Plus, Upload, Download, Sparkles, FileUp, Undo2, Redo2, Users, Share2 } from 'lucide-react';
 
 interface HeaderProps {
   project: ProjectData;
@@ -224,11 +224,11 @@ export const Header: React.FC<HeaderProps> = ({
         {onOpenCollaboration && (
           <button
             onClick={onOpenCollaboration}
-            className="px-3 py-1.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-sky-600/20 border border-sky-400/30 transition active:scale-95"
-            title="Pracovať na projekte spoločne z viacerých zariadení (WebRTC Live)"
+            className="px-3 py-1.5 bg-gradient-to-r from-sky-600 via-indigo-600 to-emerald-600 hover:from-sky-500 hover:via-indigo-500 hover:to-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-sky-600/20 border border-sky-400/30 transition active:scale-95 cursor-pointer"
+            title="Zdieľať rozpracovaný projekt s kolegom alebo pracovať spoločne v reálnom čase (Vercel & WebRTC)"
           >
-            <Users className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Spolupráca</span>
+            <Share2 className="w-3.5 h-3.5 text-white" />
+            <span className="hidden sm:inline">Zdieľať & Spolupráca</span>
             {collaboratorCount !== undefined && collaboratorCount > 1 ? (
               <span className="bg-emerald-400 text-slate-950 px-1.5 py-0.2 rounded-full text-[10px] font-black">
                 {collaboratorCount}
