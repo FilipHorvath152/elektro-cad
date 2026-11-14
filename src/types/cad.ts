@@ -110,6 +110,73 @@ export type ElectricalComponentType =
 
 export type PathwayPreference = 'floor' | 'ceiling' | 'wall';
 
+export type ComponentCategory = 'sockets' | 'switches' | 'lights' | 'appliances' | 'switchboards';
+
+export interface ComponentVisibilityFilter {
+  sockets: boolean;
+  switches: boolean;
+  lights: boolean;
+  appliances: boolean;
+  switchboards: boolean;
+}
+
+export const DEFAULT_COMPONENT_VISIBILITY: ComponentVisibilityFilter = {
+  sockets: true,
+  switches: true,
+  lights: true,
+  appliances: true,
+  switchboards: true,
+};
+
+export function getComponentCategory(type: ElectricalComponentType | string): ComponentCategory {
+  if (type === 'switchboard') return 'switchboards';
+  if (type.startsWith('light_')) return 'lights';
+  if (type.startsWith('switch_') || type === 'push_button' || type === 'blinds_switch') return 'switches';
+  if (type.startsWith('socket_') || type === 'data_socket') return 'sockets';
+  return 'appliances';
+}
+
+export const COMPONENT_CATEGORY_CONFIG: Record<
+  ComponentCategory,
+  { label: string; shortLabel: string; icon: string; color: string; description: string }
+> = {
+  sockets: {
+    label: 'Zásuvky 230V a 400V',
+    shortLabel: 'Zásuvky',
+    icon: '🔌',
+    color: '#38bdf8',
+    description: 'Bežné 230V zásuvky, dvojzásuvky, IP44, 400V motorové a RJ45 dátové zásuvky',
+  },
+  switches: {
+    label: 'Vypínače a ovládače',
+    shortLabel: 'Vypínače',
+    icon: '🔘',
+    color: '#38bdf8',
+    description: 'Spínače č. 1, 5, 6, 7, žalúziové ovládače a tlačidlá',
+  },
+  lights: {
+    label: 'Svietidlá a LED systémy',
+    shortLabel: 'Svetlá',
+    icon: '💡',
+    color: '#facc15',
+    description: 'Stropné, bodové, lustre, LED pásiky a kuchynské podsvietenie',
+  },
+  appliances: {
+    label: 'Spotrebiče a technológie',
+    shortLabel: 'Spotrebiče',
+    icon: '⚡',
+    color: '#f97316',
+    description: 'Varné dosky, rúry, bojler, tepelné čerpadlo, rekuperácia, klimatizácia, termostat',
+  },
+  switchboards: {
+    label: 'Rozvádzače RH / RP',
+    shortLabel: 'Rozvádzače',
+    icon: '📦',
+    color: '#ef4444',
+    description: 'Hlavný domový rozvádzač RH a podružné rozvádzače RP',
+  },
+};
+
 export interface CatalogItemRef {
   brand: 'Legrand' | 'Shelly' | 'Kopos' | 'Hager' | 'Kábel' | 'Prysmian' | 'NKT' | 'Eglo' | 'Kanlux' | 'Philips' | 'Ostatné';
   series?: string; // e.g. "Valena Life", "Plexo", "Shelly Plus"

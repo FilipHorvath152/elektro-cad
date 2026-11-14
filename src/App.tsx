@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CableRoute, ElectricalComponent, ElectricalComponentType, Floor, InstallationZone, PathwayPreference, ProjectData, SwitchboardEnclosure, Wall, WorkflowStep } from './types/cad';
+import { CableRoute, ComponentVisibilityFilter, DEFAULT_COMPONENT_VISIBILITY, ElectricalComponent, ElectricalComponentType, Floor, getComponentCategory, InstallationZone, PathwayPreference, ProjectData, SwitchboardEnclosure, Wall, WorkflowStep } from './types/cad';
 import { DEMO_PROJECT, EMPTY_PROJECT, INITIAL_PROJECT } from './constants/initialProject';
 import { Header } from './components/Header';
 import { WorkflowStepper } from './components/WorkflowStepper';
@@ -57,6 +57,13 @@ export function App() {
   const [currentWorkflowStep, setCurrentWorkflowStep] = useState<WorkflowStep>(1);
   const [activeTool, setActiveTool] = useState<string>('wall'); // Nástroj stena pripravený na kreslenie!
   const [selectedComponentType, setSelectedComponentType] = useState<ElectricalComponentType | undefined>('socket_230');
+  const [componentVisibility, setComponentVisibility] = useState<ComponentVisibilityFilter>(DEFAULT_COMPONENT_VISIBILITY);
+
+  const handleSelectComponentType = useCallback((type: ElectricalComponentType) => {
+    setSelectedComponentType(type);
+    const cat = getComponentCategory(type);
+    setComponentVisibility((prev) => (prev[cat] ? prev : { ...prev, [cat]: true }));
+  }, []);
   const [selectedComponentId, setSelectedComponentId] = useState<string | undefined>(undefined);
   const [selectedWallId, setSelectedWallId] = useState<string | undefined>(undefined);
   const [selectedZoneId, setSelectedZoneId] = useState<string | undefined>(undefined);
@@ -719,7 +726,7 @@ export function App() {
             activeTool={activeTool}
             onSelectTool={setActiveTool}
             selectedComponentType={selectedComponentType}
-            onSelectComponentType={setSelectedComponentType}
+            onSelectComponentType={handleSelectComponentType}
             isLinkingMode={isLinkingMode}
             onToggleLinkingMode={() => setIsLinkingMode(!isLinkingMode)}
             onTriggerAutoRouteAll={handleTriggerAutoRouteAll}
@@ -738,6 +745,8 @@ export function App() {
             onClearZones={handleClearInstallationZones}
             zoneCount={currentFloor.installationZones?.length || 0}
             onOpenZoneGuide={() => setIsZoneGuideOpen(true)}
+            componentVisibility={componentVisibility}
+            onChangeComponentVisibility={setComponentVisibility}
           />
         )}
 
@@ -784,6 +793,8 @@ export function App() {
                 }
               }}
               onOpenZoneGuide={() => setIsZoneGuideOpen(true)}
+              componentVisibility={componentVisibility}
+              onChangeComponentVisibility={setComponentVisibility}
             />
           )}
 
@@ -793,6 +804,7 @@ export function App() {
               selectedComponentId={selectedComponentId}
               onSelectComponent={setSelectedComponentId}
               onSwitchTo2D={() => setActiveView('2d')}
+              componentVisibility={componentVisibility}
             />
           )}
 

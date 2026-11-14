@@ -1,5 +1,23 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { ElectricalComponent, ElectricalComponentType, Floor, InstallationZone, InstallationZoneType, Opening, PathwayPreference, Point2D, Point3D, SwitchboardEnclosure, Wall, WorkflowStep } from '../types/cad';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  ComponentCategory,
+  ComponentVisibilityFilter,
+  DEFAULT_COMPONENT_VISIBILITY,
+  getComponentCategory,
+  COMPONENT_CATEGORY_CONFIG,
+  ElectricalComponent,
+  ElectricalComponentType,
+  Floor,
+  InstallationZone,
+  InstallationZoneType,
+  Opening,
+  PathwayPreference,
+  Point2D,
+  Point3D,
+  SwitchboardEnclosure,
+  Wall,
+  WorkflowStep,
+} from '../types/cad';
 import { getRecommendedHeight, STN_HEIGHT_RECOMMENDATIONS } from '../constants/stnStandards';
 import { getDefaultCatalogItem, recommendShellyModule } from '../constants/catalog';
 import { renderSTNSymbol } from '../services/schematicService';
@@ -18,7 +36,7 @@ import {
   resolveAllFloorWallIntersections,
   resolveWallIntersections,
 } from '../services/wallIntersectionService';
-import { Eye, EyeOff, Box, Compass, Navigation, Magnet, GitFork, Ruler, CheckCircle2, GripHorizontal, Minimize2, ShieldCheck, Sparkles, Columns, BookOpen } from 'lucide-react';
+import { Eye, EyeOff, Box, Compass, Navigation, Magnet, GitFork, Ruler, CheckCircle2, GripHorizontal, Minimize2, ShieldCheck, Sparkles, Columns, BookOpen, Layers, Filter, ChevronDown } from 'lucide-react';
 
 interface CADCanvas2DProps {
   floor: Floor;
@@ -47,6 +65,8 @@ interface CADCanvas2DProps {
   selectedZoneId?: string;
   onSelectZone?: (id: string | undefined) => void;
   onOpenZoneGuide?: () => void;
+  componentVisibility?: ComponentVisibilityFilter;
+  onChangeComponentVisibility?: (visibility: ComponentVisibilityFilter) => void;
 }
 
 export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
@@ -76,6 +96,8 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
   selectedZoneId: externalSelectedZoneId,
   onSelectZone,
   onOpenZoneGuide,
+  componentVisibility,
+  onChangeComponentVisibility,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -161,6 +183,51 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
   const [showZones, setShowZones] = useState(true);
   const [showCableRoutes, setShowCableRoutes] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
+
+  // Component Layer Visibility state (allowing hiding lights, switches, sockets, etc.)
+  const [internalVisibility, setInternalVisibility] = useState<ComponentVisibilityFilter>(DEFAULT_COMPONENT_VISIBILITY);
+  const effectiveVisibility = componentVisibility || internalVisibility;
+  const handleUpdateVisibility = onChangeComponentVisibility || setInternalVisibility;
+  const [isVisibilityMenuOpen, setIsVisibilityMenuOpen] = useState(false);
+
+  // Helper: Is a specific electrical component visible according to active layer filters
+  const isComponentVisible = useCallback(
+    (comp: ElectricalComponent) => {
+      const cat = getComponentCategory(comp.type);
+      return effectiveVisibility[cat] ?? true;
+    },
+    [effectiveVisibility]
+  );
+
+  const componentCounts = useMemo(() => {
+    const counts: Record<ComponentCategory, number> = {
+      sockets: 0,
+      switches: 0,
+      lights: 0,
+      appliances: 0,
+      switchboards: 0,
+    };
+    floor.components?.forEach((c) => {
+      const cat = getComponentCategory(c.type);
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return counts;
+  }, [floor.components]);
+
+  const totalComponentCount = floor.components?.length || 0;
+  const visibleComponentCount = useMemo(() => {
+    return (floor.components || []).filter(isComponentVisible).length;
+  }, [floor.components, isComponentVisible]);
+
+  const allVisible = useMemo(() => {
+    return Object.values(effectiveVisibility).every(Boolean);
+  }, [effectiveVisibility]);
+
+  const hiddenCategories = useMemo(() => {
+    return (['sockets', 'switches', 'lights', 'appliances', 'switchboards'] as ComponentCategory[]).filter(
+      (cat) => !effectiveVisibility[cat]
+    );
+  }, [effectiveVisibility]);
 
   // Blueprint scale calibration state (drawing a standard dimension line on blueprint kóta, NOT a wall)
   const [internalCalibrating, setInternalCalibrating] = useState(false);
@@ -1778,6 +1845,197 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
           Trasy káblov
         </button>
 
+        {/* Component Layer Visibility Filter Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setIsVisibilityMenuOpen((prev) => !prev)}
+            className={`px-2 py-1 rounded flex items-center gap-1.5 transition text-xs shadow-sm font-medium ${
+              allVisible
+                ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 font-bold'
+            }`}
+            title="Filtrovať viditeľnosť elektroinštalácie (skryť/zobraziť zásuvky, svetlá, vypínače...)"
+          >
+            <Layers className={`w-3.5 h-3.5 ${allVisible ? 'text-sky-400' : 'text-amber-400'}`} />
+            <span>Vrstvy ({visibleComponentCount}/{totalComponentCount})</span>
+            {!allVisible && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </button>
+
+          {isVisibilityMenuOpen && (
+            <div
+              className="absolute top-full left-0 mt-2 w-80 bg-slate-900/98 backdrop-blur-xl rounded-xl border border-slate-700/80 shadow-2xl p-3.5 z-50 flex flex-col gap-3 text-xs select-none"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-sky-400" />
+                  <span className="font-bold text-white text-xs">Vrstvy elektroinštalácie</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY);
+                  }}
+                  className="text-[10px] text-sky-400 hover:text-sky-300 font-semibold transition"
+                >
+                  Zobraziť všetko
+                </button>
+              </div>
+
+              {/* Rýchle predvoľby (Presets) */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rýchle predvoľby:</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Exact user scenario: Hide lights and switches when placing sockets!
+                      handleUpdateVisibility({
+                        ...effectiveVisibility,
+                        lights: false,
+                        switches: false,
+                        sockets: true,
+                        appliances: true,
+                        switchboards: true,
+                      });
+                    }}
+                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition ${
+                      !effectiveVisibility.lights && !effectiveVisibility.switches && effectiveVisibility.sockets
+                        ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 font-bold'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50'
+                    }`}
+                    title="Skryje svetlá aj vypínače na výkrese (ideálne pri osádzaní zásuviek)"
+                  >
+                    <span className="truncate">🚫💡 Skryť svetlá & vypínače</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUpdateVisibility({
+                        sockets: true,
+                        switches: false,
+                        lights: false,
+                        appliances: false,
+                        switchboards: true,
+                      });
+                    }}
+                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition ${
+                      effectiveVisibility.sockets && !effectiveVisibility.switches && !effectiveVisibility.lights && !effectiveVisibility.appliances
+                        ? 'bg-sky-500/25 text-sky-300 border border-sky-500/50 font-bold'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50'
+                    }`}
+                    title="Zobrazí iba zásuvky a rozvádzač"
+                  >
+                    <span className="truncate">🔌 Iba zásuvky</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUpdateVisibility({
+                        sockets: false,
+                        switches: true,
+                        lights: true,
+                        appliances: false,
+                        switchboards: true,
+                      });
+                    }}
+                    className={`px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition ${
+                      !effectiveVisibility.sockets && effectiveVisibility.switches && effectiveVisibility.lights && !effectiveVisibility.appliances
+                        ? 'bg-yellow-500/25 text-yellow-300 border border-yellow-500/50 font-bold'
+                        : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50'
+                    }`}
+                    title="Zobrazí iba osvetlenie a vypínače"
+                  >
+                    <span className="truncate">💡 Iba svetlá & vypínače</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY);
+                    }}
+                    className="px-2 py-1.5 rounded-lg text-left text-[11px] flex items-center gap-1.5 transition bg-slate-800/80 hover:bg-slate-800 text-slate-300 border border-slate-700/50"
+                    title="Zobrazí všetky komponenty na podlaží"
+                  >
+                    <span className="truncate">✨ Všetko zobrazené</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Zoznam 5 kategórií */}
+              <div className="flex flex-col gap-1 pt-1 border-t border-slate-800/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Kategórie prvkov:</span>
+                {[
+                  { key: 'sockets', label: 'Zásuvky 230V a 400V', icon: '🔌', count: componentCounts.sockets, desc: 'bežné, IP44, 400V, dátové' },
+                  { key: 'switches', label: 'Vypínače a ovládače', icon: '🔘', count: componentCounts.switches, desc: 'spínače 1, 5, 6, 7, tlačidlá' },
+                  { key: 'lights', label: 'Svietidlá a LED pásy', icon: '💡', count: componentCounts.lights, desc: 'stropné, bodovky, LED, kuchyňa' },
+                  { key: 'appliances', label: 'Spotrebiče a technológie', icon: '⚡', count: componentCounts.appliances, desc: 'rúra, varná doska, bojler, TČ' },
+                  { key: 'switchboards', label: 'Rozvádzače RH / RP', icon: '📦', count: componentCounts.switchboards, desc: 'hlavný a podružné rozvádzače' },
+                ].map(({ key, label, icon, count, desc }) => {
+                  const isVisible = effectiveVisibility[key as ComponentCategory];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        handleUpdateVisibility({
+                          ...effectiveVisibility,
+                          [key]: !isVisible,
+                        });
+                      }}
+                      className={`w-full p-2 rounded-lg flex items-center justify-between transition text-left ${
+                        isVisible
+                          ? 'bg-slate-800/60 hover:bg-slate-800 text-slate-200 border border-slate-700/40'
+                          : 'bg-slate-950/60 hover:bg-slate-900 text-slate-500 border border-slate-800/50 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base">{icon}</span>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-[11.5px] truncate flex items-center gap-1.5">
+                            <span>{label}</span>
+                            <span className="text-[10px] font-mono text-slate-400">({count} ks)</span>
+                          </div>
+                          <div className="text-[9.5px] text-slate-400 truncate">{desc}</div>
+                        </div>
+                      </div>
+                      <div className="ml-2 shrink-0">
+                        {isVisible ? (
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <Eye className="w-3 h-3" /> Viditeľné
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1">
+                            <EyeOff className="w-3 h-3" /> Skryté
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Stavový riadok pri skrytí */}
+              {!allVisible && (
+                <div className="p-2 rounded-lg bg-amber-950/40 border border-amber-600/30 text-[10.5px] text-amber-200 flex items-center justify-between">
+                  <span>⚠️ Skryté: {hiddenCategories.map((c) => COMPONENT_CATEGORY_CONFIG[c]?.shortLabel || c).join(', ')}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY)}
+                    className="underline font-bold text-amber-300 hover:text-white"
+                  >
+                    Obnoviť
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <button
           onClick={() => {
             setScale(65);
@@ -1814,6 +2072,26 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
           </button>
         )}
       </div>
+
+      {/* Floating Alert: When some component layers are hidden */}
+      {!allVisible && (
+        <div
+          className="absolute top-16 left-4 z-20 flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-amber-500/50 text-[11px] text-amber-200 shadow-xl no-canvas-click"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <EyeOff className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <span>
+            Filter vrstiev aktívny: skryté <strong>{hiddenCategories.map((c) => COMPONENT_CATEGORY_CONFIG[c]?.shortLabel || c).join(', ')}</strong> ({visibleComponentCount}/{totalComponentCount} viditeľných)
+          </span>
+          <button
+            type="button"
+            onClick={() => handleUpdateVisibility(DEFAULT_COMPONENT_VISIBILITY)}
+            className="ml-2 px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] transition shrink-0"
+          >
+            Zobraziť všetky
+          </button>
+        </div>
+      )}
 
       {/* Step 3: Interactive In-Canvas STN Guidance Bar */}
       {currentStep === 3 && (
@@ -3036,7 +3314,9 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         {/* 2. CABLE ROUTES */}
         {showCableRoutes &&
           switchboard &&
-          floor.components.map((comp) => {
+          floor.components
+            .filter(isComponentVisible)
+            .map((comp) => {
             if (comp.type === 'switchboard') return null;
 
             const isSelected = comp.id === selectedComponentId;
@@ -3066,13 +3346,15 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
           })}
 
         {/* 2B. SWITCH-TO-LIGHT CONTROL RELATIONSHIP LINES (Step 4 & 7) */}
-        {floor.components.map((comp) => {
+        {floor.components
+          .filter(isComponentVisible)
+          .map((comp) => {
           if (!comp.targetLightIds || comp.targetLightIds.length === 0) return null;
           const isSwitchSelected = comp.id === selectedComponentId;
 
           return comp.targetLightIds.map((lightId) => {
             const lightComp = floor.components.find((c) => c.id === lightId);
-            if (!lightComp) return null;
+            if (!lightComp || !isComponentVisible(lightComp)) return null;
 
             const sx = comp.position.x * scale;
             const sy = comp.position.y * scale;
@@ -3959,7 +4241,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         )}
 
         {/* 5. ELECTRICAL COMPONENTS */}
-        {floor.components.map((comp) => {
+        {floor.components.filter(isComponentVisible).map((comp) => {
           const cx = comp.position.x * scale;
           const cy = comp.position.y * scale;
           const isSelected = comp.id === selectedComponentId;

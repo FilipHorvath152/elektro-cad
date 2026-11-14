@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { Floor } from '../types/cad';
+import { ComponentVisibilityFilter, Floor, getComponentCategory } from '../types/cad';
 import { Compass, Target } from 'lucide-react';
 
 interface CADViewer3DProps {
@@ -8,12 +8,14 @@ interface CADViewer3DProps {
   selectedComponentId?: string;
   onSelectComponent: (id?: string) => void;
   onSwitchTo2D?: () => void;
+  componentVisibility?: ComponentVisibilityFilter;
 }
 
 export const CADViewer3D: React.FC<CADViewer3DProps> = ({
   floor,
   selectedComponentId,
   onSwitchTo2D,
+  componentVisibility,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -472,39 +474,43 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
       isSelected: boolean;
     }> = [];
 
-    // From floor.components
-    floor.components.forEach((c) => {
-      if (c.type === 'switchboard') {
-        const isSub = c.switchboardKind === 'sub' || c.notes === 'RP' || c.label.includes('RP');
-        switchboardItems.push({
-          id: c.id,
-          label: c.label || (isSub ? 'Podružný rozvádzač RP' : 'Hlavný rozvádzač RH'),
-          position: c.position,
-          rotation: c.rotation,
-          wallId: c.wallId,
-          isSub,
-          isSelected: c.id === selectedComponentId,
-        });
-      }
-    });
+    const showSwitchboards = !componentVisibility || componentVisibility.switchboards;
 
-    // From floor.switchboards (ensure initial and unlinked switchboards are always rendered)
-    floor.switchboards.forEach((sb) => {
-      const alreadyAdded = switchboardItems.some(
-        (it) => Math.hypot(it.position.x - sb.position.x, it.position.y - sb.position.y) < 0.5
-      );
-      if (!alreadyAdded) {
-        const isSub = sb.name.includes('RP');
-        switchboardItems.push({
-          id: sb.id,
-          label: sb.name || (isSub ? 'Podružný rozvádzač RP' : 'Hlavný rozvádzač RH'),
-          position: sb.position,
-          rotation: 0,
-          isSub,
-          isSelected: false,
-        });
-      }
-    });
+    if (showSwitchboards) {
+      // From floor.components
+      floor.components.forEach((c) => {
+        if (c.type === 'switchboard') {
+          const isSub = c.switchboardKind === 'sub' || c.notes === 'RP' || c.label.includes('RP');
+          switchboardItems.push({
+            id: c.id,
+            label: c.label || (isSub ? 'Podružný rozvádzač RP' : 'Hlavný rozvádzač RH'),
+            position: c.position,
+            rotation: c.rotation,
+            wallId: c.wallId,
+            isSub,
+            isSelected: c.id === selectedComponentId,
+          });
+        }
+      });
+
+      // From floor.switchboards (ensure initial and unlinked switchboards are always rendered)
+      floor.switchboards.forEach((sb) => {
+        const alreadyAdded = switchboardItems.some(
+          (it) => Math.hypot(it.position.x - sb.position.x, it.position.y - sb.position.y) < 0.5
+        );
+        if (!alreadyAdded) {
+          const isSub = sb.name.includes('RP');
+          switchboardItems.push({
+            id: sb.id,
+            label: sb.name || (isSub ? 'Podružný rozvádzač RP' : 'Hlavný rozvádzač RH'),
+            position: sb.position,
+            rotation: 0,
+            isSub,
+            isSelected: false,
+          });
+        }
+      });
+    }
 
     // Build 3D Switchboards with realistic enclosure, front door & floating 3D labels
     switchboardItems.forEach((sb) => {
@@ -591,6 +597,10 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
     // 9. Build other electrical components (sockets, switches, lights, appliances)
     floor.components.forEach((comp) => {
       if (comp.type === 'switchboard') return; // Rendered above!
+      if (componentVisibility) {
+        const cat = getComponentCategory(comp.type);
+        if (!componentVisibility[cat]) return;
+      }
 
       const isSelected = comp.id === selectedComponentId;
       const isShelly = Boolean(comp.smartModule);
@@ -935,7 +945,7 @@ export const CADViewer3D: React.FC<CADViewer3DProps> = ({
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
     };
-  }, [floor, selectedComponentId]);
+  }, [floor, selectedComponentId, componentVisibility]);
 
   return (
     <div className="relative w-full h-full bg-slate-950 select-none overflow-hidden">
