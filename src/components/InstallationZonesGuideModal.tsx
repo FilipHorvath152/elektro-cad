@@ -303,6 +303,9 @@ export const InstallationZonesGuideModal: React.FC<InstallationZonesGuideModalPr
                   <p className="text-slate-300 text-[11px]">
                     Bezpečnostné pásmo široké 60 cm po celom obvode vane alebo sprchy. Nie je to samostatná zóna – <strong>je pevne naviazaná na Zónu 1</strong> a pohybuje sa aj mení rozmery automaticky s vaňou. Sú tu zakázané bežné zásuvky 230V a povolené iba špeciálne svietidlá a spotrebiče s krytím min. IPX4 zapojené cez prúdový chránič RCD 30 mA.
                   </p>
+                  <div className="mt-1 p-2 rounded bg-amber-950/60 border border-amber-600/40 text-[10.5px] text-amber-200">
+                    💡 <strong>Asymetrická zmena veľkosti:</strong> Po kliknutí na zónu potiahnite za ľubovoľný roh. Menia sa <strong>iba strany naviazané na tento roh</strong> a opačný roh zostáva zafixovaný na pôvodnom mieste (zóna sa nerozťahuje symetricky). Zóna 2 sa automaticky prispôsobí.
+                  </div>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-teal-950/30 border border-teal-500/30 flex flex-col gap-1">
@@ -353,7 +356,7 @@ export const InstallationZonesGuideModal: React.FC<InstallationZonesGuideModalPr
                   </div>
                   <h4 className="font-bold text-slate-100 text-sm">Zväčšovanie / Zmenšovanie</h4>
                   <p className="text-slate-400 text-[11px] leading-relaxed">
-                    Potiahnite za modrý kruhový úchyt na začiatku alebo na konci zóny. Rozmer môžete zadať aj číslom v pravom paneli.
+                    Pri stenových zónach potiahnite za úchyt na začiatku/konci. Pri kúpeľňových zónach potiahnite za ľubovoľný roh — menia sa len priľahlé strany, opačný roh zostáva zafixovaný. Rozmer môžete zadať aj v pravom paneli.
                   </p>
                 </div>
               </div>

@@ -134,7 +134,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
   // Interactive Installation Zone drag state (Move along wall, resize start/end handles, or drag area/bathroom zones)
   const [zoneDragState, setZoneDragState] = useState<{
     zoneId: string;
-    mode: 'move' | 'start' | 'end' | 'area_center' | 'area_corner';
+    mode: 'move' | 'start' | 'end' | 'area_center' | 'area_corner' | 'area_edge';
     wallId?: string;
     startMouseWorld: Point2D;
     initialDist: number;
@@ -142,6 +142,8 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
     initialWidth: number;
     initialCenter?: Point2D;
     initialDimensions?: { width: number; height: number };
+    corner?: 'nw' | 'ne' | 'se' | 'sw';
+    edge?: 'n' | 's' | 'e' | 'w';
     cornerIndex?: number;
     hasMoved: boolean;
   } | null>(null);
@@ -1001,12 +1003,16 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
     });
   };
 
-  // Start dragging installation zone (move along wall, resize start/end handles, or move area zones)
+  // Start dragging installation zone (move along wall, resize start/end handles, or move/resize area zones)
   const handleStartZoneDrag = (
     zone: InstallationZone,
-    mode: 'move' | 'start' | 'end' | 'area_center' | 'area_corner',
+    mode: 'move' | 'start' | 'end' | 'area_center' | 'area_corner' | 'area_edge',
     e: React.MouseEvent,
-    cornerIndex?: number
+    options?: {
+      corner?: 'nw' | 'ne' | 'se' | 'sw';
+      edge?: 'n' | 's' | 'e' | 'w';
+      cornerIndex?: number;
+    } | number
   ) => {
     if (e.button !== 0 || e.altKey) return;
     e.stopPropagation();
@@ -1019,6 +1025,10 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
     const wall = zone.wallId ? floor.walls.find((w) => w.id === zone.wallId) : undefined;
     const wallLen = wall ? Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y) : 2.0;
 
+    const corner = typeof options === 'object' ? options.corner : undefined;
+    const edge = typeof options === 'object' ? options.edge : undefined;
+    const cornerIndex = typeof options === 'number' ? options : options?.cornerIndex;
+
     setZoneDragState({
       zoneId: zone.id,
       mode,
@@ -1029,6 +1039,8 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
       initialWidth: zone.widthMeters ?? 0.30,
       initialCenter: zone.center ? { ...zone.center } : undefined,
       initialDimensions: zone.dimensions ? { ...zone.dimensions } : undefined,
+      corner,
+      edge,
       cornerIndex,
       hasMoved: false,
     });
@@ -1313,7 +1325,7 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
           }
         }
       } else if (zoneDragState.initialCenter) {
-        // Area / Bathroom zone dragging
+        // Area / Bathroom zone dragging (Asymmetric corner drag or center move)
         const dx = worldPt.x - zoneDragState.startMouseWorld.x;
         const dy = worldPt.y - zoneDragState.startMouseWorld.y;
         if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) {
@@ -1321,9 +1333,12 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
         }
 
         if (zoneDragState.mode === 'area_center') {
+          const step = e.altKey ? 0.01 : 0.05;
+          const snappedDx = Math.round(dx / step) * step;
+          const snappedDy = Math.round(dy / step) * step;
           const newCenter = {
-            x: Number((zoneDragState.initialCenter.x + dx).toFixed(2)),
-            y: Number((zoneDragState.initialCenter.y + dy).toFixed(2)),
+            x: Number((zoneDragState.initialCenter.x + snappedDx).toFixed(2)),
+            y: Number((zoneDragState.initialCenter.y + snappedDy).toFixed(2)),
           };
           onUpdateFloor((prev) => ({
             ...prev,
@@ -1331,14 +1346,80 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
               z.id === zoneDragState.zoneId ? { ...z, center: newCenter } : z
             ),
           }), false);
-        } else if (zoneDragState.mode === 'area_corner' && zoneDragState.initialDimensions) {
-          const newW = Math.max(0.6, Number((zoneDragState.initialDimensions.width + dx).toFixed(2)));
-          const newH = Math.max(0.6, Number((zoneDragState.initialDimensions.height + dy).toFixed(2)));
+        } else if (
+          (zoneDragState.mode === 'area_corner' || zoneDragState.mode === 'area_edge') &&
+          zoneDragState.initialDimensions
+        ) {
+          const initW = zoneDragState.initialDimensions.width;
+          const initH = zoneDragState.initialDimensions.height;
+          const initCx = zoneDragState.initialCenter.x;
+          const initCy = zoneDragState.initialCenter.y;
+
+          // Pôvodné fixné hranice v metroch
+          const xMin0 = initCx - initW / 2;
+          const xMax0 = initCx + initW / 2;
+          const yMin0 = initCy - initH / 2;
+          const yMax0 = initCy + initH / 2;
+
+          let newXMin = xMin0;
+          let newXMax = xMax0;
+          let newYMin = yMin0;
+          let newYMax = yMax0;
+
+          const minDim = 0.50; // Minimálny povolený rozmer vane / sprchy (50 cm)
+          const step = e.altKey ? 0.01 : 0.05;
+          const snapCoord = (val: number) => Math.round(val / step) * step;
+
+          if (zoneDragState.mode === 'area_corner') {
+            const corner = zoneDragState.corner || 'se';
+
+            if (corner === 'nw') {
+              // Ťahanie za ľavý horný roh: menia sa IBA ľavá a horná strana, pravá a dolná zostávajú fixované
+              newXMin = Math.min(xMax0 - minDim, snapCoord(xMin0 + dx));
+              newYMin = Math.min(yMax0 - minDim, snapCoord(yMin0 + dy));
+            } else if (corner === 'ne') {
+              // Ťahanie za pravý horný roh: menia sa IBA pravá a horná strana, ľavá a dolná zostávajú fixované
+              newXMax = Math.max(xMin0 + minDim, snapCoord(xMax0 + dx));
+              newYMin = Math.min(yMax0 - minDim, snapCoord(yMin0 + dy));
+            } else if (corner === 'se') {
+              // Ťahanie za pravý dolný roh: menia sa IBA pravá a dolná strana, ľavá a horná zostávajú fixované
+              newXMax = Math.max(xMin0 + minDim, snapCoord(xMax0 + dx));
+              newYMax = Math.max(yMin0 + minDim, snapCoord(yMax0 + dy));
+            } else if (corner === 'sw') {
+              // Ťahanie za ľavý dolný roh: menia sa IBA ľavá a dolná strana, pravá a horná zostávajú fixované
+              newXMin = Math.min(xMax0 - minDim, snapCoord(xMin0 + dx));
+              newYMax = Math.max(yMin0 + minDim, snapCoord(yMax0 + dy));
+            }
+          } else if (zoneDragState.mode === 'area_edge') {
+            const edge = zoneDragState.edge || 'e';
+            if (edge === 'n') {
+              newYMin = Math.min(yMax0 - minDim, snapCoord(yMin0 + dy));
+            } else if (edge === 's') {
+              newYMax = Math.max(yMin0 + minDim, snapCoord(yMax0 + dy));
+            } else if (edge === 'w') {
+              newXMin = Math.min(xMax0 - minDim, snapCoord(xMin0 + dx));
+            } else if (edge === 'e') {
+              newXMax = Math.max(xMin0 + minDim, snapCoord(xMax0 + dx));
+            }
+          }
+
+          const newW = Number((newXMax - newXMin).toFixed(2));
+          const newH = Number((newYMax - newYMin).toFixed(2));
+          const newCenter = {
+            x: Number(((newXMin + newXMax) / 2).toFixed(4)),
+            y: Number(((newYMin + newYMax) / 2).toFixed(4)),
+          };
+
           onUpdateFloor((prev) => ({
             ...prev,
             installationZones: prev.installationZones?.map((z) =>
               z.id === zoneDragState.zoneId
-                ? { ...z, dimensions: { width: newW, height: newH }, widthMeters: newW }
+                ? {
+                    ...z,
+                    center: newCenter,
+                    dimensions: { width: newW, height: newH },
+                    widthMeters: newW,
+                  }
                 : z
             ),
           }), false);
@@ -2680,13 +2761,27 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                       {/* Interactive Handles when Selected */}
                       {isSelected && (
                         <g className="select-none">
+                          {/* Rozmerové štítky na hranách vane pri výbere */}
+                          <g transform={`translate(${rx + rw / 2}, ${ry - 12})`}>
+                            <rect x="-24" y="-8" width="48" height="15" rx="3.5" fill="#0f172a" stroke="#38bdf8" strokeWidth="1" filter="drop-shadow(0 1px 3px rgba(0,0,0,0.5))" />
+                            <text x="0" y="3" fill="#38bdf8" fontSize="8.5" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
+                              ↔ {bw.toFixed(2)} m
+                            </text>
+                          </g>
+                          <g transform={`translate(${rx + rw + 22}, ${ry + rh / 2})`}>
+                            <rect x="-24" y="-8" width="48" height="15" rx="3.5" fill="#0f172a" stroke="#38bdf8" strokeWidth="1" filter="drop-shadow(0 1px 3px rgba(0,0,0,0.5))" />
+                            <text x="0" y="3" fill="#38bdf8" fontSize="8.5" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
+                              ↕ {bh.toFixed(2)} m
+                            </text>
+                          </g>
+
                           {/* Center Move Handle: Presúva vaňu aj s naviazanou Zónou 2 */}
                           <g
                             transform={`translate(${zone.center.x * scale}, ${zone.center.y * scale + 24})`}
                             className="cursor-move"
                             onMouseDown={(e) => handleStartZoneDrag(zone, 'area_center', e)}
                           >
-                            <title>Potiahnite pre presunutie vane/sprchy aj s naviazanou Zónou 2</title>
+                            <title>Presunúť celú vaňu/sprchu aj s naviazanou Zónou 2</title>
                             <rect
                               x="-56"
                               y="-10"
@@ -2703,15 +2798,129 @@ export const CADCanvas2D: React.FC<CADCanvas2DProps> = ({
                             </text>
                           </g>
 
-                          {/* Corner Resize Handle: Menia sa rozmery vane a Zóna 2 sa automaticky prispôsobuje */}
+                          {/* 1. Rohové úchyty Zóny 0 & 1 (Vaňa / Sprcha) - Asymetrická zmena rozmerov */}
+                          {/* SZ (Top-Left): Mení hornú a ľavú stranu, opačný JV roh ostáva fixovaný */}
+                          <g
+                            transform={`translate(${rx}, ${ry})`}
+                            className="cursor-nwse-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'nw' })}
+                          >
+                            <title>Potiahnite roh (SZ): Zmení sa horná a ľavá strana, opačný roh zostane na mieste</title>
+                            <circle r="8.5" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="3" fill="#ffffff" />
+                          </g>
+
+                          {/* SV (Top-Right): Mení hornú a pravú stranu, opačný JZ roh ostáva fixovaný */}
+                          <g
+                            transform={`translate(${rx + rw}, ${ry})`}
+                            className="cursor-nesw-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'ne' })}
+                          >
+                            <title>Potiahnite roh (SV): Zmení sa horná a pravá strana, opačný roh zostane na mieste</title>
+                            <circle r="8.5" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="3" fill="#ffffff" />
+                          </g>
+
+                          {/* JV (Bottom-Right): Mení dolnú a pravú stranu, opačný SZ roh ostáva fixovaný */}
                           <g
                             transform={`translate(${rx + rw}, ${ry + rh})`}
                             className="cursor-nwse-resize"
-                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e)}
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'se' })}
                           >
-                            <title>Potiahnite pre zmenu rozmeru vane/sprchy (Zóna 2 sa prispôsobí automaticky)</title>
-                            <circle r="9" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.4))" />
-                            <circle r="3.5" fill="#ffffff" />
+                            <title>Potiahnite roh (JV): Zmení sa dolná a pravá strana, opačný roh zostane na mieste</title>
+                            <circle r="8.5" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="3" fill="#ffffff" />
+                          </g>
+
+                          {/* JZ (Bottom-Left): Mení dolnú a ľavú stranu, opačný SV roh ostáva fixovaný */}
+                          <g
+                            transform={`translate(${rx}, ${ry + rh})`}
+                            className="cursor-nesw-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'sw' })}
+                          >
+                            <title>Potiahnite roh (JZ): Zmení sa dolná a ľavá strana, opačný roh zostane na mieste</title>
+                            <circle r="8.5" fill="#0284c7" stroke="#ffffff" strokeWidth="2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="3" fill="#ffffff" />
+                          </g>
+
+                          {/* 2. Hranové úchyty Zóny 0 & 1 (Stredy strán vane) */}
+                          {/* Horná hrana (N) */}
+                          <g
+                            transform={`translate(${rx + rw / 2}, ${ry})`}
+                            className="cursor-ns-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_edge', e, { edge: 'n' })}
+                          >
+                            <title>Potiahnite hornú hranu vane</title>
+                            <rect x="-8" y="-4" width="16" height="8" rx="2" fill="#0284c7" stroke="#ffffff" strokeWidth="1.5" />
+                          </g>
+                          {/* Dolná hrana (S) */}
+                          <g
+                            transform={`translate(${rx + rw / 2}, ${ry + rh})`}
+                            className="cursor-ns-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_edge', e, { edge: 's' })}
+                          >
+                            <title>Potiahnite dolnú hranu vane</title>
+                            <rect x="-8" y="-4" width="16" height="8" rx="2" fill="#0284c7" stroke="#ffffff" strokeWidth="1.5" />
+                          </g>
+                          {/* Ľavá hrana (W) */}
+                          <g
+                            transform={`translate(${rx}, ${ry + rh / 2})`}
+                            className="cursor-ew-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_edge', e, { edge: 'w' })}
+                          >
+                            <title>Potiahnite ľavú hranu vane</title>
+                            <rect x="-4" y="-8" width="8" height="16" rx="2" fill="#0284c7" stroke="#ffffff" strokeWidth="1.5" />
+                          </g>
+                          {/* Pravá hrana (E) */}
+                          <g
+                            transform={`translate(${rx + rw}, ${ry + rh / 2})`}
+                            className="cursor-ew-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_edge', e, { edge: 'e' })}
+                          >
+                            <title>Potiahnite pravú hranu vane</title>
+                            <rect x="-4" y="-8" width="8" height="16" rx="2" fill="#0284c7" stroke="#ffffff" strokeWidth="1.5" />
+                          </g>
+
+                          {/* 3. Rohové úchyty Zóny 2 (Ochranný bezpečnostný pás 60 cm) */}
+                          {/* SZ Roh Zóny 2 */}
+                          <g
+                            transform={`translate(${z2x}, ${z2y})`}
+                            className="cursor-nwse-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'nw' })}
+                          >
+                            <title>Potiahnutím rohu Zóny 2 zmeníte hornú a ľavú stranu bezpečnostnej zóny</title>
+                            <circle r="7.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.8" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="2.5" fill="#ffffff" />
+                          </g>
+                          {/* SV Roh Zóny 2 */}
+                          <g
+                            transform={`translate(${z2x + z2w}, ${z2y})`}
+                            className="cursor-nesw-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'ne' })}
+                          >
+                            <title>Potiahnutím rohu Zóny 2 zmeníte hornú a pravú stranu bezpečnostnej zóny</title>
+                            <circle r="7.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.8" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="2.5" fill="#ffffff" />
+                          </g>
+                          {/* JV Roh Zóny 2 */}
+                          <g
+                            transform={`translate(${z2x + z2w}, ${z2y + z2h})`}
+                            className="cursor-nwse-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'se' })}
+                          >
+                            <title>Potiahnutím rohu Zóny 2 zmeníte dolnú a pravú stranu bezpečnostnej zóny</title>
+                            <circle r="7.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.8" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="2.5" fill="#ffffff" />
+                          </g>
+                          {/* JZ Roh Zóny 2 */}
+                          <g
+                            transform={`translate(${z2x}, ${z2y + z2h})`}
+                            className="cursor-nesw-resize"
+                            onMouseDown={(e) => handleStartZoneDrag(zone, 'area_corner', e, { corner: 'sw' })}
+                          >
+                            <title>Potiahnutím rohu Zóny 2 zmeníte dolnú a ľavú stranu bezpečnostnej zóny</title>
+                            <circle r="7.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.8" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.45))" />
+                            <circle r="2.5" fill="#ffffff" />
                           </g>
                         </g>
                       )}
